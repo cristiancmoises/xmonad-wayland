@@ -1,0 +1,6 @@
+xmonad-wayland (0.1.0-1) unstable; urgency=low
+
+  * Local experimental source package; independent of upstream XMonad.
+  * Require River >= 0.4 for a working session; allow a source-built compositor.
+
+ -- Local Builder <root@localhost>  Wed, 16 Sep 2026 00:00:00 +0000

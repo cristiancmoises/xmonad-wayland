@@ -1,0 +1,8 @@
+Independent experimental port of XMonad's pure StackSet core to River's native
+Wayland window-management protocol. River 0.4 or newer supplies the compositor;
+this package supplies policy, layouts, workspaces and keyboard bindings.
+
+This local port recipe has not been built on FreeBSD. It has no published
+distfile URL; generate distinfo from the supplied archive with make makesum.
+River classic and River 0.3 are incompatible. Arbitrary X11 xmonad.hs files and
+XMonad.Contrib modules are not supported.
