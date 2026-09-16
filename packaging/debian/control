@@ -1,0 +1,27 @@
+Source: xmonad-wayland
+Section: x11
+Priority: optional
+Maintainer: Local Builder <root@localhost>
+Build-Depends: debhelper-compat (= 13),
+ ghc (>= 9.0),
+ gcc,
+ make,
+ pkg-config,
+ libwayland-dev (>= 1.20),
+ libwayland-bin (>= 1.20),
+ python3
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: xmonad-wayland
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libwayland-client0 (>= 1.20)
+Recommends: river (>= 0.4)
+Suggests: foot, fuzzel
+Description: experimental XMonad StackSet window manager for River Wayland
+ Independent experimental port of XMonad's pure StackSet core to River's
+ native Wayland window-management protocol. River 0.4 or newer is required
+ to run a graphical session; River classic and River 0.3 are incompatible.
+ .
+ The compositor may be installed separately from source. This package does
+ not provide a compositor and does not support arbitrary X11 xmonad.hs files.

@@ -1,0 +1,36 @@
+#!/bin/sh
+# SPDX-License-Identifier: BSD-3-Clause
+set -eu
+if [ "$(id -u)" = 0 ]; then
+    echo 'Run the Wayland session as your normal desktop user, not root.' >&2
+    exit 1
+fi
+command -v river >/dev/null 2>&1 || {
+    echo 'River >=0.4 is required (river-classic/0.3 is incompatible).' >&2
+    exit 1
+}
+command -v xmonad-wayland >/dev/null 2>&1 || {
+    echo 'xmonad-wayland is not on PATH.' >&2
+    exit 1
+}
+version=$(river -version 2>&1) || {
+    echo 'Cannot determine River version with river -version.' >&2
+    exit 1
+}
+case "$version" in *classic*) echo 'river-classic is incompatible.' >&2; exit 1;; esac
+numbers=$(printf '%s\n' "$version" | sed -n 's/^[^0-9]*\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
+# Only decimal digits and a space from the substitution enter positional args.
+set -- $numbers
+if [ "$#" -ne 2 ]; then
+    echo "Unrecognized River version: $version" >&2
+    exit 1
+fi
+if [ "$1" -eq 0 ] && [ "$2" -lt 4 ]; then
+    echo "Incompatible River: $version. River >=0.4 is required." >&2
+    exit 1
+fi
+# River -c is a shell command by design. This is a fixed literal, never metadata.
+# It also avoids altering or executing the user's existing river/init.
+export XDG_CURRENT_DESKTOP=XMonadWayland
+export XDG_SESSION_TYPE=wayland
+exec river -c 'exec xmonad-wayland'

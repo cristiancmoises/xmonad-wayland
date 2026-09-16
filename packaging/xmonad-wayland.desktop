@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=XMonad Wayland (Experimental)
+Comment=Haskell window management on River 0.4 or newer
+Exec=xmonad-wayland-session
+TryExec=xmonad-wayland-session
+Type=Application
+DesktopNames=XMonadWayland

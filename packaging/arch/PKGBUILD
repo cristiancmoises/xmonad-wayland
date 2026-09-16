@@ -1,0 +1,32 @@
+# Local source recipe; unbuilt on Arch. Place the supplied source archive here.
+# Run updpkgsums before makepkg to record the actual local archive checksum.
+# SKIP is a visible local bootstrap value, not a claimed upstream checksum.
+pkgname=xmonad-wayland
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Experimental XMonad StackSet window manager for River Wayland'
+arch=('x86_64')
+license=('BSD-3-Clause' 'MIT')
+depends=('wayland>=1.20' 'river>=0.4' 'gmp' 'libffi')
+makedepends=('ghc>=9.0' 'ghc-static' 'gcc' 'make' 'pkgconf')
+checkdepends=('python')
+optdepends=('foot: default terminal' 'fuzzel: default launcher')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    make all PREFIX=/usr
+}
+
+check() {
+    cd "$srcdir/$pkgname-$pkgver"
+    make test
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    make install PREFIX=/usr DESTDIR="$pkgdir"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -m644 licenses/* "$pkgdir/usr/share/licenses/$pkgname/"
+}

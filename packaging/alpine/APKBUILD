@@ -1,0 +1,33 @@
+# Local source recipe, unbuilt on Alpine. Requires an appropriate edge repository.
+# Copy the source tarball beside this file, then run `abuild checksum` to replace
+# the empty checksum list with the actual digest before `abuild -r`.
+pkgname=xmonad-wayland
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Experimental XMonad StackSet window manager for River Wayland"
+# This unpublished local package links to its installed documentation.
+url="file:///usr/share/doc/$pkgname/README.md"
+arch="x86_64"
+license="BSD-3-Clause AND MIT"
+depends="river>=0.4 wayland-libs-client>=1.20"
+makedepends="ghc>=9.0 ghc-dev gcc make pkgconf wayland-dev>=1.20"
+checkdepends="python3"
+source="$pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+    make all PREFIX=/usr
+}
+
+check() {
+    make test
+}
+
+package() {
+    make install PREFIX=/usr DESTDIR="$pkgdir"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -m644 licenses/* "$pkgdir/usr/share/licenses/$pkgname/"
+}
+
+# Generated locally by abuild checksum; deliberately no invented checksum.
+sha512sums=""
