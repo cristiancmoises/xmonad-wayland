@@ -1,5 +1,7 @@
 # Security model and boundaries
 
+[Português do Brasil](SECURITY.pt-BR.md)
+
 This is experimental desktop software. Run it as a normal desktop user inside
 a nested River session first. There is no setuid helper, root daemon, listener
 on a network socket, telemetry, updater, or remote configuration download.
@@ -7,7 +9,8 @@ on a network socket, telemetry, updater, or remote configuration download.
 The manager has the authority granted by River's window-management globals:
 it can arrange/focus/close applications and register shortcuts. Protect its
 executable and Haskell configuration like other code executed at login. A
-Haskell configuration is executable code, not a restricted configuration format.
+Haskell configuration is executable code. The reloadable text format contains
+trusted application commands and is not a sandbox.
 
 Application titles/app IDs do not become commands. Terminal and launcher commands
 are configured as an executable plus an argument list and launched without a
@@ -23,12 +26,14 @@ Session lock implementation belongs to River and a separately installed locker.
 This manager suppresses its policy actions while informed that the session is
 locked. It does not itself lock the screen, provide automatic idle locking, or
 prove the security of a compositor/locker combination. The stop shortcut quits
-only the manager and must not be used as a lock shortcut.
+only the manager and must not be used as a lock shortcut. Configured confirmed
+session exit requires an explicit successful confirmation and protocol version
+4; cancellation or an unsupported compositor does not terminate the session.
 
 XWayland applications inherit XWayland's security boundaries; this package does
 not promise isolation between X11 clients. A native Wayland port alone does not
 constitute an audited secure desktop. No security audit or production-readiness
-claim is made for version 0.1.0.
+claim is made for version 0.2.0-dev.
 
 No package script changes existing XMonad files, display-manager selection,
 user river/init, device permissions, kernel settings or firewall configuration.

@@ -10,7 +10,7 @@ main = do
   arguments <- getArgs
   case arguments of
     [] -> run defaultConfig
-    ["--version"] -> putStrLn "xmonad-wayland 0.1.0 (experimental River window manager)"
+    ["--version"] -> putStrLn "xmonad-wayland 0.2.0-dev (experimental River window manager)"
     ["--help"] -> putStrLn $ unlines
       [ "Usage: xmonad-wayland [--version | --help]"
       , "Run inside River >= 0.4. River classic/0.3 is incompatible."

@@ -1,8 +1,8 @@
 # Local port only, not submitted or built on FreeBSD.
-# Put xmonad-wayland-0.1.0.tar.gz in a private DISTDIR, then run `make makesum`.
+# Put xmonad-wayland-0.2.0-dev.tar.gz in a private DISTDIR, then run `make makesum`.
 # No network download is configured and no distinfo checksum is fabricated.
 PORTNAME=       xmonad-wayland
-DISTVERSION=    0.1.0
+DISTVERSION=    0.2.0-dev
 CATEGORIES=     x11-wm
 MASTER_SITES=
 DISTFILES=      ${DISTNAME}.tar.gz
@@ -29,6 +29,7 @@ TEST_TARGET=    test
 
 PLIST_FILES=    bin/xmonad-wayland \
                 bin/xmonad-wayland-session \
+                bin/xmonad-wayland-doctor \
                 share/wayland-sessions/xmonad-wayland.desktop
 PORTDATA=       *
 PORTDOCS=       *

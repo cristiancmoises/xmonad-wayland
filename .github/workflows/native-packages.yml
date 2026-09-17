@@ -1,0 +1,55 @@
+name: Native source packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debian:
+    runs-on: ubuntu-latest
+    container: debian:trixie-slim
+    steps:
+      - name: Install native build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git build-essential ghc debhelper pkg-config libwayland-dev libwayland-bin python3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Build and test Debian source and binary packages
+        run: scripts/build-deb.sh "$RUNNER_TEMP/debian-packages"
+      - name: Install the locally built package
+        run: |
+          apt-get install -y --no-install-recommends "$RUNNER_TEMP"/debian-packages/xmonad-wayland_*_amd64.deb
+          xmonad-wayland --version
+          test -x /usr/bin/xmonad-wayland-session
+          test -x /usr/bin/xmonad-wayland-doctor
+          test -f /usr/share/wayland-sessions/xmonad-wayland.desktop
+          test -f /usr/share/xmonad-wayland/VERSION
+
+  fedora:
+    runs-on: ubuntu-latest
+    container: registry.fedoraproject.org/fedora:44
+    steps:
+      - name: Install native build dependencies
+        run: |
+          dnf install -y git gcc make rpm-build ghc ghc-base-devel ghc-containers-devel ghc-transformers-devel ghc-process-devel ghc-directory-devel ghc-unix-devel pkgconf-pkg-config wayland-devel wayland-protocols-devel python3 river foot fuzzel
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Build and test Fedora source and binary packages
+        run: |
+          python3 scripts/package-source.py "$RUNNER_TEMP/rpm/SOURCES"
+          rpmbuild --define "_topdir $RUNNER_TEMP/rpm" -ba packaging/rpm/xmonad-wayland.spec
+      - name: Install the locally built package
+        run: |
+          dnf install -y "$RUNNER_TEMP"/rpm/RPMS/*/xmonad-wayland-*.rpm
+          xmonad-wayland --version
+          test -x /usr/bin/xmonad-wayland-session
+          test -x /usr/bin/xmonad-wayland-doctor
+          test -f /usr/share/wayland-sessions/xmonad-wayland.desktop
+          test -f /usr/share/xmonad-wayland/VERSION
+      - name: Exercise the installed manager with headless River
+        run: |
+          make build/xdg-probe
+          python3 tests/river_smoke.py --manager /usr/bin/xmonad-wayland --output "$RUNNER_TEMP/river-smoke"

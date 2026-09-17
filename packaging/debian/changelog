@@ -1,6 +1,7 @@
-xmonad-wayland (0.1.0-1) unstable; urgency=low
+xmonad-wayland (0.2.0~dev-1) unstable; urgency=low
 
   * Local experimental source package; independent of upstream XMonad.
   * Require River >= 0.4 for a working session; allow a source-built compositor.
+  * Build from a clean native source tree and derive ELF library dependencies.
 
  -- Local Builder <root@localhost>  Wed, 16 Sep 2026 00:00:00 +0000

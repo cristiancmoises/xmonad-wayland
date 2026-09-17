@@ -10,17 +10,20 @@
 #include "bridge.h"
 #include "river-window-management-v1-client-protocol.h"
 #include "river-xkb-bindings-v1-client-protocol.h"
+#include "river-layer-shell-v1-client-protocol.h"
 
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wayland-client.h>
 
 enum phase { PHASE_IDLE, PHASE_MANAGE, PHASE_RENDER };
+enum layer_focus { LAYER_FOCUS_NONE, LAYER_FOCUS_EXCLUSIVE, LAYER_FOCUS_NON_EXCLUSIVE };
 
 struct window {
     struct window *next;
@@ -28,38 +31,58 @@ struct window {
     struct river_node_v1 *node;
     uint32_t id;
     bool announced, closed, configured, visible, focused;
+    bool parent_dirty, hints_dirty, fullscreen_dirty, fullscreen_requested, floating;
+    bool exited_fullscreen;
+    uint32_t parent_id, fullscreen_output;
+    size_t stacking_depth;
+    int32_t min_width, min_height, max_width, max_height;
     int32_t x, y, width, height, border, actual_width, actual_height;
 };
 
 struct output {
     struct output *next;
     struct river_output_v1 *proxy;
+    struct river_layer_shell_output_v1 *layer;
     uint32_t id;
     bool announced, removed, dirty, has_position, has_dimensions;
     int32_t x, y, width, height;
+    bool area_dirty;
+    int32_t area_x, area_y, area_width, area_height;
 };
 
 struct seat;
+struct pointer_binding {
+    struct river_pointer_binding_v1 *proxy;
+    struct seat *seat;
+    uint32_t button;
+    bool enabled;
+};
 struct binding {
     struct binding *next;
     struct river_xkb_binding_v1 *proxy;
     struct seat *seat;
-    uint32_t action;
-    int32_t argument;
+    uint32_t index, mode;
     bool enabled;
 };
 
 struct seat {
     struct seat *next;
     struct river_seat_v1 *proxy;
+    struct river_layer_shell_seat_v1 *layer;
     struct binding *bindings;
+    struct pointer_binding pointer_bindings[2];
     uint32_t id;
+    uint32_t pointer_window;
+    int32_t pointer_x, pointer_y, delta_x, delta_y;
+    bool pointer_known, delta_pending, release_pending;
     bool removed, configured;
+    enum layer_focus layer_focus;
+    bool layer_focus_override;
 };
 
 struct input {
     struct input *next;
-    int32_t kind, argument;
+    int32_t kind, argument, b, c, d;
     uint32_t id, seat_id;
 };
 
@@ -69,13 +92,16 @@ static struct {
     struct wl_callback *discovery;
     struct river_window_manager_v1 *manager;
     struct river_xkb_bindings_v1 *xkb;
+    struct river_layer_shell_v1 *layer_shell;
     struct window *windows;
     struct output *outputs;
     struct seat *seats, *primary;
     struct input *input_head, *input_tail;
     enum phase phase;
-    uint32_t next_id, manager_global, xkb_global;
-    bool running, failed, finished, unavailable;
+    uint32_t next_id, manager_global, xkb_global, layer_global, binding_mode;
+    uint32_t pointer_seat, pointer_window, pointer_edges;
+    bool pointer_cancel_batch;
+    bool running, failed, finished, unavailable, exit_sent;
     bool stop_requested, stop_sent, managed, awaiting_render;
     bool locked, lock_changed, warned_multiseat;
     bool discovery_done, sigint_installed, sigterm_installed;
@@ -83,6 +109,12 @@ static struct {
 } state;
 
 static volatile sig_atomic_t interrupted;
+static atomic_bool exit_requested;
+
+void xw_request_exit_session(void)
+{
+    atomic_store(&exit_requested, true);
+}
 
 /* Signal delivery may run on a different Haskell RTS thread. Do not call
  * Wayland, Haskell, allocation, logging, or any non-signal-safe function here.
@@ -127,6 +159,51 @@ static struct window *find_window(uint32_t id)
     return NULL;
 }
 
+static struct seat *find_seat(uint32_t id)
+{
+    struct seat *seat;
+    for (seat = state.seats; seat; seat = seat->next)
+        if (seat->id == id && !seat->removed) return seat;
+    return NULL;
+}
+
+static void queue_pointer(struct seat *seat, uint32_t window, uint32_t edges)
+{
+    struct input *event;
+    if (!seat || seat != state.primary || seat->removed || state.locked ||
+        state.failed || state.pointer_seat || !find_window(window) ||
+        seat->layer_focus == LAYER_FOCUS_EXCLUSIVE) return;
+    event = allocate(sizeof *event);
+    if (!event) return;
+    event->kind = 21;
+    event->id = window;
+    event->seat_id = seat->id;
+    event->argument = (int32_t)seat->id;
+    event->b = (int32_t)edges;
+    if (state.input_tail) state.input_tail->next = event;
+    else state.input_head = event;
+    state.input_tail = event;
+}
+
+static void pointer_pressed(void *data, struct river_pointer_binding_v1 *proxy)
+{
+    struct pointer_binding *binding = data;
+    (void)proxy;
+    queue_pointer(binding->seat, binding->seat->pointer_window,
+                  binding->button == 272 ? 0 : 16);
+}
+
+static void pointer_released(void *data, struct river_pointer_binding_v1 *proxy)
+{
+    /* Only op_release ends the operation, after every pointer button is up. */
+    (void)data; (void)proxy;
+}
+
+static const struct river_pointer_binding_v1_listener pointer_listener = {
+    .pressed = pointer_pressed,
+    .released = pointer_released,
+};
+
 static void queue_input(int32_t kind, uint32_t id, int32_t argument,
                         const struct seat *seat)
 {
@@ -151,7 +228,7 @@ static void binding_pressed(void *data, struct river_xkb_binding_v1 *proxy)
 {
     struct binding *binding = data;
     (void)proxy;
-    queue_input(6, binding->action, binding->argument, binding->seat);
+    queue_input(20, binding->index, 0, binding->seat);
 }
 
 static void binding_released(void *data, struct river_xkb_binding_v1 *proxy)
@@ -166,9 +243,14 @@ static const struct river_xkb_binding_v1_listener binding_listener = {
     .stop_repeat = binding_released,
 };
 
-static void add_binding(struct seat *seat, uint32_t keysym, uint32_t modifiers,
-                        uint32_t action, int32_t argument)
+void xw_add_binding(uint32_t keysym, uint32_t modifiers, uint32_t index,
+                    uint32_t mode)
 {
+    struct seat *seat = state.primary;
+    if (state.phase != PHASE_MANAGE || !seat || !state.xkb) {
+        fail("keyboard bindings must be configured during manage");
+        return;
+    }
     struct binding *binding = allocate(sizeof *binding);
     if (!binding)
         return;
@@ -180,8 +262,8 @@ static void add_binding(struct seat *seat, uint32_t keysym, uint32_t modifiers,
         return;
     }
     binding->seat = seat;
-    binding->action = action;
-    binding->argument = argument;
+    binding->index = index;
+    binding->mode = mode;
     binding->next = seat->bindings;
     seat->bindings = binding;
     if (river_xkb_binding_v1_add_listener(binding->proxy, &binding_listener,
@@ -191,29 +273,111 @@ static void add_binding(struct seat *seat, uint32_t keysym, uint32_t modifiers,
 
 static void configure_seat(struct seat *seat)
 {
-    const uint32_t super = RIVER_SEAT_V1_MODIFIERS_MOD4;
-    const uint32_t shifted = super | RIVER_SEAT_V1_MODIFIERS_SHIFT;
-    uint32_t digit;
-    /* XKB Latin keysyms equal their ASCII code; Return is XKB_KEY_Return.
-     * No libxkbcommon runtime dependency is needed to name these keysyms.
-     */
-    add_binding(seat, 'j', super, 1, 0);
-    add_binding(seat, 'k', super, 2, 0);
-    add_binding(seat, 'j', shifted, 13, 0);
-    add_binding(seat, 'k', shifted, 14, 0);
-    add_binding(seat, 0xff0d, super, 10, 0);
-    add_binding(seat, 0xff0d, shifted, 3, 0);
-    add_binding(seat, ' ', super, 4, 0);
-    add_binding(seat, 'h', super, 5, 0);
-    add_binding(seat, 'l', super, 6, 0);
-    add_binding(seat, 'c', shifted, 9, 0);
-    add_binding(seat, 'p', super, 11, 0);
-    add_binding(seat, 'q', shifted, 12, 0);
-    for (digit = 1; digit <= 9; ++digit) {
-        add_binding(seat, '0' + digit, super, 7, (int32_t)digit);
-        add_binding(seat, '0' + digit, shifted, 8, (int32_t)digit);
+    for (unsigned i = 0; i < 2; ++i) {
+        struct pointer_binding *binding = &seat->pointer_bindings[i];
+        if (binding->proxy) continue;
+        binding->seat = seat;
+        binding->button = 272 + i;
+        binding->proxy = river_seat_v1_get_pointer_binding(seat->proxy,
+            binding->button, RIVER_SEAT_V1_MODIFIERS_MOD4);
+        if (!binding->proxy || river_pointer_binding_v1_add_listener(
+                binding->proxy, &pointer_listener, binding) < 0) {
+            fail("could not create River pointer binding");
+            return;
+        }
     }
+    xw_configure_bindings();
     seat->configured = true;
+}
+
+void xw_set_cursor_theme(const char *name, uint32_t size)
+{
+    if (state.phase != PHASE_MANAGE || !state.primary) return;
+    if (river_seat_v1_get_version(state.primary->proxy) >= 2)
+        river_seat_v1_set_xcursor_theme(state.primary->proxy, name, size);
+    else
+        fprintf(stderr, "xmonad-wayland: cursor theme requires River seat protocol version 2\n");
+}
+
+void xw_set_binding_mode(uint32_t mode)
+{
+    struct binding *binding;
+    if (state.phase != PHASE_MANAGE) {
+        fail("keyboard modes must be changed during manage");
+        return;
+    }
+    state.binding_mode = mode;
+    if (!state.primary) return;
+    for (binding = state.primary->bindings; binding; binding = binding->next) {
+        bool enabled = !state.locked && binding->mode == state.binding_mode;
+        if (binding->enabled == enabled) continue;
+        if (enabled) river_xkb_binding_v1_enable(binding->proxy);
+        else river_xkb_binding_v1_disable(binding->proxy);
+        binding->enabled = enabled;
+    }
+    for (unsigned i = 0; i < 2; ++i) {
+        struct pointer_binding *pointer = &state.primary->pointer_bindings[i];
+        bool enabled = !state.locked &&
+            state.primary->layer_focus != LAYER_FOCUS_EXCLUSIVE;
+        if (!pointer->proxy || pointer->enabled == enabled) continue;
+        if (enabled) river_pointer_binding_v1_enable(pointer->proxy);
+        else river_pointer_binding_v1_disable(pointer->proxy);
+        pointer->enabled = enabled;
+    }
+}
+
+void xw_set_pointer_operation(uint32_t seat_id, uint32_t window_id, uint32_t edges)
+{
+    struct seat *seat;
+    struct window *window;
+    if (state.phase != PHASE_MANAGE) {
+        fail("pointer operations must change during manage");
+        return;
+    }
+    if (seat_id == state.pointer_seat && window_id == state.pointer_window &&
+        edges == state.pointer_edges) return;
+    if (state.pointer_seat) {
+        seat = find_seat(state.pointer_seat);
+        window = find_window(state.pointer_window);
+        if (seat) {
+            river_seat_v1_op_end(seat->proxy);
+            seat->delta_pending = seat->release_pending = false;
+        }
+        if (window && state.pointer_edges)
+            river_window_v1_inform_resize_end(window->proxy);
+        state.pointer_seat = state.pointer_window = state.pointer_edges = 0;
+        /* River ignores start while the previous operation is still active. */
+        if (seat_id) fail("cannot replace pointer operation in one manage sequence");
+        return;
+    }
+    if (!seat_id) return;
+    seat = find_seat(seat_id);
+    window = find_window(window_id);
+    if (!seat || seat != state.primary || !window || state.locked ||
+        seat->layer_focus == LAYER_FOCUS_EXCLUSIVE) return;
+    state.pointer_seat = seat_id;
+    state.pointer_window = window_id;
+    state.pointer_edges = edges;
+    seat->delta_pending = seat->release_pending = false;
+    river_seat_v1_op_start_pointer(seat->proxy);
+    if (edges) river_window_v1_inform_resize_start(window->proxy);
+}
+
+void xw_reset_bindings(void)
+{
+    struct binding *binding;
+    if (state.phase != PHASE_MANAGE) {
+        fail("keyboard bindings must be reloaded during manage");
+        return;
+    }
+    if (!state.primary) return;
+    while ((binding = state.primary->bindings)) {
+        state.primary->bindings = binding->next;
+        river_xkb_binding_v1_destroy(binding->proxy);
+        free(binding);
+    }
+    configure_seat(state.primary);
+    xw_set_binding_mode(state.binding_mode);
 }
 
 static void window_closed(void *data, struct river_window_v1 *proxy)
@@ -227,6 +391,10 @@ static void window_dimensions(void *data, struct river_window_v1 *proxy,
 {
     struct window *w = data;
     (void)proxy;
+    if (width <= 0 || height <= 0) {
+        fail("compositor sent invalid window dimensions");
+        return;
+    }
     w->actual_width = width;
     w->actual_height = height;
 }
@@ -235,8 +403,13 @@ static void window_dimensions_hint(void *data, struct river_window_v1 *proxy,
                                     int32_t min_width, int32_t min_height,
                                     int32_t max_width, int32_t max_height)
 {
-    (void)data; (void)proxy;
-    (void)min_width; (void)min_height; (void)max_width; (void)max_height;
+    struct window *w = data;
+    (void)proxy;
+    w->min_width = min_width;
+    w->min_height = min_height;
+    w->max_width = max_width;
+    w->max_height = max_height;
+    w->hints_dirty = true;
 }
 
 static void window_text(void *data, struct river_window_v1 *proxy,
@@ -248,7 +421,15 @@ static void window_text(void *data, struct river_window_v1 *proxy,
 static void window_parent(void *data, struct river_window_v1 *proxy,
                            struct river_window_v1 *parent)
 {
-    (void)data; (void)proxy; (void)parent;
+    struct window *w = data, *candidate;
+    (void)proxy;
+    w->parent_id = 0;
+    for (candidate = state.windows; candidate; candidate = candidate->next)
+        if (candidate->proxy == parent && !candidate->closed) {
+            w->parent_id = candidate->id;
+            break;
+        }
+    w->parent_dirty = true;
 }
 
 static void window_uint(void *data, struct river_window_v1 *proxy, uint32_t value)
@@ -264,13 +445,20 @@ static void window_pid(void *data, struct river_window_v1 *proxy, int32_t pid)
 static void window_pointer_move(void *data, struct river_window_v1 *proxy,
                                  struct river_seat_v1 *seat)
 {
-    (void)data; (void)proxy; (void)seat;
+    struct seat *candidate;
+    (void)proxy;
+    for (candidate = state.seats; candidate; candidate = candidate->next)
+        if (candidate->proxy == seat) queue_pointer(candidate, ((struct window *)data)->id, 0);
 }
 
 static void window_pointer_resize(void *data, struct river_window_v1 *proxy,
                                    struct river_seat_v1 *seat, uint32_t edges)
 {
-    (void)data; (void)proxy; (void)seat; (void)edges;
+    struct seat *candidate;
+    (void)proxy;
+    if (!edges || edges > 15 || (edges & 3) == 3 || (edges & 12) == 12) return;
+    for (candidate = state.seats; candidate; candidate = candidate->next)
+        if (candidate->proxy == seat) queue_pointer(candidate, ((struct window *)data)->id, edges);
 }
 
 static void window_menu(void *data, struct river_window_v1 *proxy,
@@ -287,11 +475,23 @@ static void window_request(void *data, struct river_window_v1 *proxy)
 static void window_fullscreen(void *data, struct river_window_v1 *proxy,
                                struct river_output_v1 *output)
 {
-    (void)data; (void)proxy; (void)output;
+    struct window *w = data;
+    (void)proxy; (void)output;
+    /* The protocol's requested output is a hint. Keep the window on its
+     * workspace's output instead of moving a hidden client's workspace. */
+    w->fullscreen_requested = w->fullscreen_dirty = true;
+}
+
+static void window_exit_fullscreen(void *data, struct river_window_v1 *proxy)
+{
+    struct window *w = data;
+    (void)proxy;
+    w->fullscreen_requested = false;
+    w->fullscreen_dirty = true;
 }
 
 /* Every event, including ignored client requests and later-version events,
- * has a correctly typed listener. We advertise unsupported capabilities as 0.
+ * has a correctly typed listener. Only implemented capabilities are advertised.
  */
 static const struct river_window_v1_listener window_listener = {
     .closed = window_closed,
@@ -307,7 +507,7 @@ static const struct river_window_v1_listener window_listener = {
     .maximize_requested = window_request,
     .unmaximize_requested = window_request,
     .fullscreen_requested = window_fullscreen,
-    .exit_fullscreen_requested = window_request,
+    .exit_fullscreen_requested = window_exit_fullscreen,
     .minimize_requested = window_request,
     .unreliable_pid = window_pid,
     .presentation_hint = window_uint,
@@ -319,6 +519,7 @@ static void output_removed(void *data, struct river_output_v1 *proxy)
 {
     (void)proxy;
     ((struct output *)data)->removed = true;
+    state.pointer_cancel_batch = true;
 }
 
 static void output_uint(void *data, struct river_output_v1 *proxy, uint32_t value)
@@ -331,6 +532,7 @@ static void output_position(void *data, struct river_output_v1 *proxy,
 {
     struct output *output = data;
     (void)proxy;
+    if (output->x != x || output->y != y) state.pointer_cancel_batch = true;
     output->x = x;
     output->y = y;
     output->has_position = output->dirty = true;
@@ -345,6 +547,7 @@ static void output_dimensions(void *data, struct river_output_v1 *proxy,
         fail("compositor sent invalid logical output dimensions");
         return;
     }
+    if (output->width != width || output->height != height) state.pointer_cancel_batch = true;
     output->width = width;
     output->height = height;
     output->has_dimensions = output->dirty = true;
@@ -372,12 +575,25 @@ static void seat_wl_seat(void *data, struct river_seat_v1 *proxy, uint32_t name)
 static void seat_pointer_enter(void *data, struct river_seat_v1 *proxy,
                                 struct river_window_v1 *window)
 {
-    (void)data; (void)proxy; (void)window;
+    struct seat *seat = data;
+    struct window *w;
+    (void)proxy;
+    seat->pointer_window = 0;
+    for (w = state.windows; w; w = w->next)
+        if (w->proxy == window && !w->closed) seat->pointer_window = w->id;
 }
 
-static void seat_simple(void *data, struct river_seat_v1 *proxy)
+static void seat_pointer_leave(void *data, struct river_seat_v1 *proxy)
 {
-    (void)data; (void)proxy;
+    (void)proxy;
+    ((struct seat *)data)->pointer_window = 0;
+}
+
+static void seat_op_release(void *data, struct river_seat_v1 *proxy)
+{
+    struct seat *seat = data;
+    (void)proxy;
+    if (seat->id == state.pointer_seat) seat->release_pending = true;
 }
 
 static void seat_window_interaction(void *data, struct river_seat_v1 *proxy,
@@ -399,23 +615,108 @@ static void seat_shell_interaction(void *data, struct river_seat_v1 *proxy,
     (void)data; (void)proxy; (void)surface;
 }
 
-static void seat_coordinates(void *data, struct river_seat_v1 *proxy,
+static void seat_delta(void *data, struct river_seat_v1 *proxy,
                               int32_t x, int32_t y)
 {
-    (void)data; (void)proxy; (void)x; (void)y;
+    struct seat *seat = data;
+    (void)proxy;
+    if (seat->id != state.pointer_seat) return;
+    seat->delta_x = x;
+    seat->delta_y = y;
+    seat->delta_pending = true;
+}
+
+static void seat_position(void *data, struct river_seat_v1 *proxy,
+                          int32_t x, int32_t y)
+{
+    struct seat *seat = data;
+    (void)proxy;
+    seat->pointer_x = x;
+    seat->pointer_y = y;
+    seat->pointer_known = true;
 }
 
 static const struct river_seat_v1_listener seat_listener = {
     .removed = seat_removed,
     .wl_seat = seat_wl_seat,
     .pointer_enter = seat_pointer_enter,
-    .pointer_leave = seat_simple,
+    .pointer_leave = seat_pointer_leave,
     .window_interaction = seat_window_interaction,
     .shell_surface_interaction = seat_shell_interaction,
-    .op_delta = seat_coordinates,
-    .op_release = seat_simple,
-    .pointer_position = seat_coordinates,
+    .op_delta = seat_delta,
+    .op_release = seat_op_release,
+    .pointer_position = seat_position,
 };
+
+static void layer_area(void *data, struct river_layer_shell_output_v1 *proxy,
+                       int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    struct output *output = data;
+    (void)proxy;
+    if (output->area_x != x || output->area_y != y ||
+        output->area_width != width || output->area_height != height)
+        state.pointer_cancel_batch = true;
+    output->area_x = x;
+    output->area_y = y;
+    output->area_width = width;
+    output->area_height = height;
+    output->area_dirty = true;
+}
+
+static const struct river_layer_shell_output_v1_listener layer_output_listener = {
+    .non_exclusive_area = layer_area,
+};
+
+static void layer_focus_exclusive(void *data, struct river_layer_shell_seat_v1 *proxy)
+{
+    (void)proxy;
+    ((struct seat *)data)->layer_focus = LAYER_FOCUS_EXCLUSIVE;
+    if (data == state.primary) state.pointer_cancel_batch = true;
+}
+
+static void layer_focus_non_exclusive(void *data, struct river_layer_shell_seat_v1 *proxy)
+{
+    (void)proxy;
+    ((struct seat *)data)->layer_focus = LAYER_FOCUS_NON_EXCLUSIVE;
+}
+
+static void layer_focus_none(void *data, struct river_layer_shell_seat_v1 *proxy)
+{
+    (void)proxy;
+    ((struct seat *)data)->layer_focus = LAYER_FOCUS_NONE;
+}
+
+static const struct river_layer_shell_seat_v1_listener layer_seat_listener = {
+    .focus_exclusive = layer_focus_exclusive,
+    .focus_non_exclusive = layer_focus_non_exclusive,
+    .focus_none = layer_focus_none,
+};
+
+static void attach_layer_output(struct output *output)
+{
+    if (!state.layer_shell || output->layer || output->removed)
+        return;
+    output->layer = river_layer_shell_v1_get_output(state.layer_shell, output->proxy);
+    if (!output->layer || river_layer_shell_output_v1_add_listener(
+            output->layer, &layer_output_listener, output) < 0)
+        fail("could not create River layer-shell output state");
+}
+
+static void attach_layer_seat(struct seat *seat)
+{
+    if (!state.layer_shell || seat->layer || seat->removed)
+        return;
+    seat->layer = river_layer_shell_v1_get_seat(state.layer_shell, seat->proxy);
+    if (!seat->layer || river_layer_shell_seat_v1_add_listener(
+            seat->layer, &layer_seat_listener, seat) < 0)
+        fail("could not create River layer-shell seat state");
+}
+
+static bool layer_has_focus(void)
+{
+    return state.primary && state.primary->layer_focus != LAYER_FOCUS_NONE &&
+        !state.primary->layer_focus_override;
+}
 
 /* The protocol destructor is valid after removed/closed or manager.finished.
  * During disconnect/error cleanup only destroy client-side proxies: no request
@@ -434,6 +735,10 @@ static void destroy_window(struct window *w, bool protocol)
 
 static void destroy_output(struct output *output, bool protocol)
 {
+    if (output->layer) {
+        if (protocol) river_layer_shell_output_v1_destroy(output->layer);
+        else wl_proxy_destroy((struct wl_proxy *)output->layer);
+    }
     if (protocol) river_output_v1_destroy(output->proxy);
     else wl_proxy_destroy((struct wl_proxy *)output->proxy);
     free(output);
@@ -442,6 +747,16 @@ static void destroy_output(struct output *output, bool protocol)
 static void destroy_seat(struct seat *seat, bool protocol)
 {
     struct binding *binding;
+    for (unsigned i = 0; i < 2; ++i) {
+        struct river_pointer_binding_v1 *pointer = seat->pointer_bindings[i].proxy;
+        if (!pointer) continue;
+        if (protocol) river_pointer_binding_v1_destroy(pointer);
+        else wl_proxy_destroy((struct wl_proxy *)pointer);
+    }
+    if (seat->layer) {
+        if (protocol) river_layer_shell_seat_v1_destroy(seat->layer);
+        else wl_proxy_destroy((struct wl_proxy *)seat->layer);
+    }
     while ((binding = seat->bindings)) {
         seat->bindings = binding->next;
         if (protocol) river_xkb_binding_v1_destroy(binding->proxy);
@@ -496,6 +811,11 @@ static void update_lifecycle(void)
             output->dirty = false;
             output->announced = true;
         }
+        if (output->area_dirty) {
+            xw_event(14, output->id, output->area_x, output->area_y,
+                      output->area_width, output->area_height);
+            output->area_dirty = false;
+        }
     }
     for (w = state.windows; w; w = w->next) {
         if (!w->configured) {
@@ -504,7 +824,7 @@ static void update_lifecycle(void)
                 fail("could not create River window render node");
                 return;
             }
-            river_window_v1_set_capabilities(w->proxy, 0);
+            river_window_v1_set_capabilities(w->proxy, RIVER_WINDOW_V1_CAPABILITIES_FULLSCREEN);
             river_window_v1_use_ssd(w->proxy);
             river_window_v1_set_tiled(w->proxy, 15);
             w->configured = true;
@@ -514,8 +834,25 @@ static void update_lifecycle(void)
             w->announced = true;
         }
     }
+    /* Parent references may point at another window announced in this same
+     * transaction. Insert every window before publishing its metadata. */
+    for (w = state.windows; w; w = w->next) {
+        if (w->parent_dirty) {
+            xw_event(11, w->id, (int32_t)w->parent_id, 0, 0, 0);
+            w->parent_dirty = false;
+        }
+        if (w->hints_dirty) {
+            xw_event(12, w->id, w->min_width, w->min_height, w->max_width, w->max_height);
+            w->hints_dirty = false;
+        }
+        if (w->fullscreen_dirty) {
+            xw_event(13, w->id, w->fullscreen_requested, 0, 0, 0);
+            w->fullscreen_dirty = false;
+        }
+    }
     while ((seat = *seat_link)) {
         if (seat->removed) {
+            xw_event(24, seat->id, 0, 0, 0, 0);
             if (state.primary == seat)
                 state.primary = NULL;
             *seat_link = seat->next;
@@ -528,18 +865,7 @@ static void update_lifecycle(void)
         state.primary = state.seats;
     if (state.primary && !state.primary->configured)
         configure_seat(state.primary);
-    if (state.primary) {
-        struct binding *binding;
-        for (binding = state.primary->bindings; binding; binding = binding->next) {
-            if (binding->enabled == state.locked) {
-                if (state.locked)
-                    river_xkb_binding_v1_disable(binding->proxy);
-                else
-                    river_xkb_binding_v1_enable(binding->proxy);
-                binding->enabled = !state.locked;
-            }
-        }
-    }
+    xw_set_binding_mode(state.binding_mode);
 }
 
 static void send_stop(void)
@@ -566,20 +892,52 @@ static void manager_manage_start(void *data, struct river_window_manager_v1 *pro
         return;
     }
     state.phase = PHASE_MANAGE;
-    update_lifecycle();
+    /* Metadata can change policy focus. Publish the transaction's lock state
+     * first, including when a fullscreen request arrives in the same batch. */
     if (state.lock_changed) {
         xw_event(state.locked ? 9 : 10, 0, 0, 0, 0, 0);
         state.lock_changed = false;
     }
+    update_lifecycle();
+    if (state.pointer_seat && (state.pointer_cancel_batch || state.locked ||
+        !state.primary || state.primary->id != state.pointer_seat ||
+        state.primary->layer_focus == LAYER_FOCUS_EXCLUSIVE))
+        xw_event(24, state.pointer_seat, 0, 0, 0, 0);
+    if (state.primary)
+        state.primary->layer_focus_override = false;
     while ((event = state.input_head)) {
         state.input_head = event->next;
         if (!state.failed && !state.locked && state.primary &&
             event->seat_id == state.primary->id &&
-            (event->kind != 5 || find_window(event->id)))
-            xw_event(event->kind, event->id, event->argument, 0, 0, 0);
+            ((event->kind != 5 && event->kind != 21) || find_window(event->id)) &&
+            (event->kind != 21 || (!state.pointer_cancel_batch &&
+             state.primary->layer_focus != LAYER_FOCUS_EXCLUSIVE))) {
+            /* A click or an explicit WM binding may leave an on-demand layer.
+             * Exclusive layer focus remains compositor-controlled. */
+            if (state.primary->layer_focus == LAYER_FOCUS_NON_EXCLUSIVE)
+                state.primary->layer_focus_override = true;
+            if (event->kind == 21 && event->b == 16) {
+                /* pointer_position is transaction state and may follow pressed. */
+                if (state.primary->pointer_known) {
+                    event->c = state.primary->pointer_x;
+                    event->d = state.primary->pointer_y;
+                } else event->b = 10;
+            }
+            xw_event(event->kind, event->id, event->argument, event->b, event->c, event->d);
+        }
         free(event);
     }
     state.input_tail = NULL;
+    if (state.primary && state.pointer_seat == state.primary->id) {
+        struct seat *seat = state.primary;
+        /* River deltas are cumulative logical integers. Apply the newest total
+         * before release even when the release callback preceded that delta. */
+        if (seat->delta_pending)
+            xw_event(22, seat->id, seat->delta_x, seat->delta_y, 0, 0);
+        if (seat->release_pending) xw_event(23, seat->id, 0, 0, 0, 0);
+        seat->delta_pending = seat->release_pending = false;
+    }
+    state.pointer_cancel_batch = false;
     if (!state.failed)
         xw_event(7, 0, 0, 0, 0, 0);
     if (!state.failed) {
@@ -594,6 +952,7 @@ static void manager_manage_start(void *data, struct river_window_manager_v1 *pro
 static void manager_render_start(void *data, struct river_window_manager_v1 *proxy)
 {
     struct window *w, *focused = NULL;
+    size_t count = 0, maximum_depth = 0, depth;
     (void)data;
     if (state.failed)
         return;
@@ -602,6 +961,16 @@ static void manager_render_start(void *data, struct river_window_manager_v1 *pro
         return;
     }
     state.phase = PHASE_RENDER;
+    /* Borders may change without another content dimensions event. Publish
+     * actual OUTER sizes using the current border before correcting anchors. */
+    for (w = state.windows; w; w = w->next) {
+        if (w->closed || !w->announced || w->actual_width <= 0 || w->actual_height <= 0)
+            continue;
+        int64_t width = (int64_t)w->actual_width + 2 * w->border;
+        int64_t height = (int64_t)w->actual_height + 2 * w->border;
+        xw_event(25, w->id, (int32_t)(width > INT32_MAX ? INT32_MAX : width),
+            (int32_t)(height > INT32_MAX ? INT32_MAX : height), 0, 0);
+    }
     xw_event(8, 0, 0, 0, 0, 0);
     if (!state.failed) {
         for (w = state.windows; w; w = w->next) {
@@ -621,10 +990,32 @@ static void manager_render_start(void *data, struct river_window_manager_v1 *pro
                 river_window_v1_set_borders(w->proxy, 15, w->border,
                     0x44444444u, 0x44444444u, 0x44444444u, UINT32_MAX);
             }
-            river_node_v1_place_top(w->node);
+            if (!w->floating)
+                river_node_v1_place_top(w->node);
         }
-        if (focused)
+        if (focused && !focused->floating)
             river_node_v1_place_top(focused->node);
+        /* Floating dialogs must remain above tiles and their own parents,
+         * including a focused floating parent. Bound ancestry traversal even
+         * if a faulty compositor violates the protocol's acyclic tree rule. */
+        for (w = state.windows; w; w = w->next)
+            ++count;
+        for (w = state.windows; w; w = w->next) {
+            struct window *parent = w;
+            w->stacking_depth = 1;
+            while ((parent = find_window(parent->parent_id)) && parent->floating &&
+                   w->stacking_depth < count)
+                ++w->stacking_depth;
+            if (w->floating && w->stacking_depth > maximum_depth)
+                maximum_depth = w->stacking_depth;
+        }
+        for (depth = 1; depth <= maximum_depth; ++depth) {
+            for (w = state.windows; w; w = w->next)
+                if (!w->closed && w->node && w->visible && w->floating && w->stacking_depth == depth)
+                    river_node_v1_place_top(w->node);
+            if (focused && focused->floating && focused->stacking_depth == depth)
+                river_node_v1_place_top(focused->node);
+        }
         river_window_manager_v1_render_finish(proxy);
         state.awaiting_render = false;
     }
@@ -650,6 +1041,7 @@ static void manager_locked(void *data, struct river_window_manager_v1 *proxy)
 {
     (void)data; (void)proxy;
     state.locked = state.lock_changed = true;
+    state.pointer_cancel_batch = true;
 }
 
 static void manager_unlocked(void *data, struct river_window_manager_v1 *proxy)
@@ -691,6 +1083,7 @@ static void manager_output(void *data, struct river_window_manager_v1 *proxy,
     *tail = output;
     if (river_output_v1_add_listener(river_output, &output_listener, output) < 0)
         fail("could not install River output listener");
+    attach_layer_output(output);
 }
 
 static void manager_seat(void *data, struct river_window_manager_v1 *proxy,
@@ -714,6 +1107,7 @@ static void manager_seat(void *data, struct river_window_manager_v1 *proxy,
         state.primary = seat;
     if (river_seat_v1_add_listener(river_seat, &seat_listener, seat) < 0)
         fail("could not install River seat listener");
+    attach_layer_seat(seat);
 }
 
 static const struct river_window_manager_v1_listener manager_listener = {
@@ -736,7 +1130,7 @@ static void registry_global(void *data, struct wl_registry *registry,
         return;
     if (!strcmp(interface, river_window_manager_v1_interface.name) && !state.manager) {
         state.manager = wl_registry_bind(registry, name,
-                                          &river_window_manager_v1_interface, 1);
+                                          &river_window_manager_v1_interface, version < 4 ? version : 4);
         state.manager_global = name;
         if (!state.manager) {
             fail("could not bind river_window_manager_v1");
@@ -750,13 +1144,26 @@ static void registry_global(void *data, struct wl_registry *registry,
         state.xkb_global = name;
         if (!state.xkb)
             fail("could not bind river_xkb_bindings_v1");
+    } else if (!strcmp(interface, river_layer_shell_v1_interface.name) && !state.layer_shell) {
+        struct output *output;
+        struct seat *seat;
+        state.layer_shell = wl_registry_bind(registry, name, &river_layer_shell_v1_interface, 1);
+        state.layer_global = name;
+        if (!state.layer_shell) {
+            fail("could not bind river_layer_shell_v1");
+            return;
+        }
+        for (output = state.outputs; output; output = output->next)
+            attach_layer_output(output);
+        for (seat = state.seats; seat; seat = seat->next)
+            attach_layer_seat(seat);
     }
 }
 
 static void registry_global_remove(void *data, struct wl_registry *registry, uint32_t name)
 {
     (void)data; (void)registry;
-    if (name == state.manager_global || name == state.xkb_global)
+    if (name == state.manager_global || name == state.xkb_global || name == state.layer_global)
         fail("compositor removed a required River window-management global");
 }
 
@@ -783,8 +1190,8 @@ void xw_set_window(uint32_t id, int visible, int x, int y,
     if (!require_manage() || !(w = find_window(id)))
         return;
     w->visible = visible != 0;
-    w->focused = focused != 0;
-    w->border = width > 4 && height > 4 ? 2 : 0;
+    w->focused = focused != 0 && !layer_has_focus();
+    w->border = !w->fullscreen_output && width > 4 && height > 4 ? 2 : 0;
     /* Do arithmetic in 64 bits so even an extreme logical output position
      * cannot cause signed C overflow. Clamp unrepresentable content positions.
      */
@@ -792,15 +1199,73 @@ void xw_set_window(uint32_t id, int visible, int x, int y,
     w->y = (int64_t)y + w->border > INT32_MAX ? INT32_MAX : y + w->border;
     w->width = width > 0 ? width - 2 * w->border : 1;
     w->height = height > 0 ? height - 2 * w->border : 1;
-    if (w->visible)
+    if (w->visible && !w->fullscreen_output) {
         river_window_v1_propose_dimensions(w->proxy, w->width, w->height);
+        /* River undefines position/dimensions after exit_fullscreen. Restore
+         * both in a manage transaction, retaining the obligation while hidden. */
+        if (w->exited_fullscreen && w->node) {
+            river_node_v1_set_position(w->node, w->x, w->y);
+            w->exited_fullscreen = false;
+        }
+    }
     /* show/hide, position, stacking and borders are deferred to render. */
+}
+
+void xw_set_output(uint32_t id)
+{
+    struct output *output;
+    if (!require_manage())
+        return;
+    for (output = state.outputs; output; output = output->next)
+        if (output->id == id && output->layer && !output->removed) {
+            river_layer_shell_output_v1_set_default(output->layer);
+            return;
+        }
+}
+
+void xw_set_mode(uint32_t id, uint32_t output_id, int floating, int fullscreen)
+{
+    struct window *w;
+    struct output *output;
+    if (!require_manage() || !(w = find_window(id)))
+        return;
+    w->floating = floating != 0;
+    river_window_v1_set_tiled(w->proxy, w->floating ? 0 : 15);
+    for (output = state.outputs; output; output = output->next)
+        if (output->id == output_id && !output->removed)
+            break;
+    if (!fullscreen || !output) {
+        if (w->fullscreen_output) {
+            river_window_v1_exit_fullscreen(w->proxy);
+            river_window_v1_inform_not_fullscreen(w->proxy);
+            w->fullscreen_output = 0;
+            w->exited_fullscreen = true;
+        }
+    } else if (w->fullscreen_output != output_id) {
+        river_window_v1_fullscreen(w->proxy, output->proxy);
+        river_window_v1_inform_fullscreen(w->proxy);
+        w->fullscreen_output = output_id;
+    }
+}
+
+void xw_set_render_position(uint32_t id, int x, int y)
+{
+    struct window *w = find_window(id);
+    if (state.phase != PHASE_RENDER) {
+        fail("actual-size position corrections must occur during render");
+        return;
+    }
+    if (!w || !w->visible) return;
+    w->x = (int32_t)((int64_t)x + w->border > INT32_MAX ? INT32_MAX : x + w->border);
+    w->y = (int32_t)((int64_t)y + w->border > INT32_MAX ? INT32_MAX : y + w->border);
 }
 
 void xw_focus(uint32_t id)
 {
     struct window *w;
     if (!require_manage() || !state.primary || state.primary->removed)
+        return;
+    if (!state.locked && layer_has_focus())
         return;
     w = find_window(id);
     if (w && w->visible && !state.locked)
@@ -852,6 +1317,10 @@ static void cleanup(void)
     if (state.xkb) {
         if (protocol) river_xkb_bindings_v1_destroy(state.xkb);
         else wl_proxy_destroy((struct wl_proxy *)state.xkb);
+    }
+    if (state.layer_shell) {
+        if (protocol) river_layer_shell_v1_destroy(state.layer_shell);
+        else wl_proxy_destroy((struct wl_proxy *)state.layer_shell);
     }
     if (state.manager) {
         if (protocol) river_window_manager_v1_destroy(state.manager);
@@ -917,12 +1386,21 @@ static void dispatch_once(void)
 {
     struct pollfd descriptor;
     int ready;
+    if (atomic_exchange(&exit_requested, false) && state.manager) {
+        if (river_window_manager_v1_get_version(state.manager) >= 4) {
+            river_window_manager_v1_exit_session(state.manager);
+            state.exit_sent = true;
+        } else {
+            fprintf(stderr, "xmonad-wayland: session exit requires River window management protocol version 4\n");
+        }
+    }
     while (wl_display_prepare_read(state.display) != 0) {
         if (interrupted || !state.running || state.failed)
             return;
         if (wl_display_dispatch_pending(state.display) < 0) {
-            if (!interrupted)
+            if (!interrupted && !state.exit_sent)
                 fail("Wayland connection lost while dispatching pending events");
+            state.running = false;
             return;
         }
     }
@@ -939,8 +1417,9 @@ static void dispatch_once(void)
         } else {
             int error = errno;
             wl_display_cancel_read(state.display);
-            if (!interrupted && error != EINTR)
+            if (!interrupted && !state.exit_sent && error != EINTR)
                 fail("Wayland connection lost while flushing requests");
+            if (state.exit_sent) state.running = false;
             return;
         }
     }
@@ -953,12 +1432,15 @@ static void dispatch_once(void)
     }
     if (descriptor.revents & (POLLIN | POLLHUP | POLLERR)) {
         if (wl_display_read_events(state.display) < 0) {
-            if (!interrupted && errno != EINTR)
+            if (!interrupted && !state.exit_sent && errno != EINTR)
                 fail("Wayland connection lost or compositor rejected a protocol request (see Wayland diagnostic above)");
+            if (state.exit_sent) state.running = false;
             return;
         }
-        if (!interrupted && wl_display_dispatch_pending(state.display) < 0 && !interrupted)
-            fail("Wayland connection lost while dispatching events");
+        if (!interrupted && wl_display_dispatch_pending(state.display) < 0 && !interrupted) {
+            if (!state.exit_sent) fail("Wayland connection lost while dispatching events");
+            else state.running = false;
+        }
     } else {
         wl_display_cancel_read(state.display);
         if (descriptor.revents & POLLNVAL)
@@ -975,6 +1457,7 @@ int xw_run(void)
     }
     memset(&state, 0, sizeof state);
     interrupted = 0;
+    atomic_store(&exit_requested, false);
     state.running = true;
     state.display = wl_display_connect(NULL);
     if (!state.display) {

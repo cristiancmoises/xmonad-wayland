@@ -1,36 +1,85 @@
 #!/bin/sh
 # SPDX-License-Identifier: BSD-3-Clause
 set -eu
+usage() {
+    echo 'Usage: xmonad-wayland-session [--check] [--nested] [--] [River arguments...]'
+    echo 'XMONAD_WAYLAND_RIVER and XMONAD_WAYLAND_MANAGER override executable paths.'
+    echo 'Inside Wayland, opens a private nested session and a Foot terminal.'
+    echo 'XMONAD_WAYLAND_TERMINAL selects one executable for the initial nested terminal.'
+}
+check_only=no
+nested=no
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --help|-h) usage; exit 0 ;;
+        --check) check_only=yes; shift ;;
+        --nested) nested=yes; shift ;;
+        --) shift; break ;;
+        *) break ;;
+    esac
+done
+[ -z "${WAYLAND_DISPLAY:-}" ] || nested=yes
 if [ "$(id -u)" = 0 ]; then
     echo 'Run the Wayland session as your normal desktop user, not root.' >&2
     exit 1
 fi
-command -v river >/dev/null 2>&1 || {
-    echo 'River >=0.4 is required (river-classic/0.3 is incompatible).' >&2
+river_command=${XMONAD_WAYLAND_RIVER:-river}
+manager_command=${XMONAD_WAYLAND_MANAGER:-xmonad-wayland}
+river_path=$(command -v "$river_command") || {
+    echo "River >=0.4 is required; executable unavailable: $river_command" >&2
     exit 1
 }
-command -v xmonad-wayland >/dev/null 2>&1 || {
-    echo 'xmonad-wayland is not on PATH.' >&2
+XMONAD_WAYLAND_MANAGER=$(command -v "$manager_command") || {
+    echo "Manager executable unavailable: $manager_command" >&2
     exit 1
 }
-version=$(river -version 2>&1) || {
+# Resolve relative paths before River changes working directory or runs a shell.
+case $river_path in /*) ;; *) river_path=$PWD/$river_path ;; esac
+case $XMONAD_WAYLAND_MANAGER in /*) ;; *) XMONAD_WAYLAND_MANAGER=$PWD/$XMONAD_WAYLAND_MANAGER ;; esac
+export XMONAD_WAYLAND_MANAGER
+version=$("$river_path" -version 2>&1) || {
     echo 'Cannot determine River version with river -version.' >&2
     exit 1
 }
-case "$version" in *classic*) echo 'river-classic is incompatible.' >&2; exit 1;; esac
+case $version in *classic*) echo 'river-classic is incompatible.' >&2; exit 1 ;; esac
 numbers=$(printf '%s\n' "$version" | sed -n 's/^[^0-9]*\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
-# Only decimal digits and a space from the substitution enter positional args.
-set -- $numbers
-if [ "$#" -ne 2 ]; then
+major=${numbers%% *}
+minor=${numbers#* }
+if [ -z "$numbers" ] || [ "$major" = "$minor" ]; then
     echo "Unrecognized River version: $version" >&2
     exit 1
 fi
-if [ "$1" -eq 0 ] && [ "$2" -lt 4 ]; then
+if [ "$major" -eq 0 ] && [ "$minor" -lt 4 ]; then
     echo "Incompatible River: $version. River >=0.4 is required." >&2
     exit 1
 fi
-# River -c is a shell command by design. This is a fixed literal, never metadata.
-# It also avoids altering or executing the user's existing river/init.
+if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ] || [ ! -w "$XDG_RUNTIME_DIR" ]; then
+    echo 'XDG_RUNTIME_DIR must name your existing writable session runtime directory.' >&2
+    exit 1
+fi
+if [ "$nested" = yes ]; then
+    if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+        echo '--nested requires an existing Wayland desktop (WAYLAND_DISPLAY).' >&2
+        exit 1
+    fi
+    script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+    nested_helper=$script_directory/xmonad-wayland-nested.py
+    if [ ! -x "$nested_helper" ]; then
+        echo "Nested session helper unavailable: $nested_helper" >&2
+        exit 1
+    fi
+    if [ "$check_only" = yes ]; then
+        exec "$nested_helper" --river "$river_path" --manager "$XMONAD_WAYLAND_MANAGER" --check -- "$@"
+    fi
+    exec "$nested_helper" --river "$river_path" --manager "$XMONAD_WAYLAND_MANAGER" -- "$@"
+fi
+if [ "$check_only" = yes ]; then
+    printf 'River: %s (%s)\nManager: %s\nRuntime: %s\n' "$river_path" "$version" "$XMONAD_WAYLAND_MANAGER" "$XDG_RUNTIME_DIR"
+    exit 0
+fi
 export XDG_CURRENT_DESKTOP=XMonadWayland
 export XDG_SESSION_TYPE=wayland
-exec river -c 'exec xmonad-wayland'
+# Fixed shell expression; the executable is an environment value, never code.
+# No user river/init is read or overwritten. Extra argv is passed literally.
+# shellcheck disable=SC2016
+exec "$river_path" -c 'exec "$XMONAD_WAYLAND_MANAGER"' "$@"

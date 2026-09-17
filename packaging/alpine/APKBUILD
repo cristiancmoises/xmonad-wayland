@@ -2,7 +2,8 @@
 # Copy the source tarball beside this file, then run `abuild checksum` to replace
 # the empty checksum list with the actual digest before `abuild -r`.
 pkgname=xmonad-wayland
-pkgver=0.1.0
+pkgver=0.2.0_pre20260916
+_sourcever=0.2.0-dev
 pkgrel=0
 pkgdesc="Experimental XMonad StackSet window manager for River Wayland"
 # This unpublished local package links to its installed documentation.
@@ -12,8 +13,8 @@ license="BSD-3-Clause AND MIT"
 depends="river>=0.4 wayland-libs-client>=1.20"
 makedepends="ghc>=9.0 ghc-dev gcc make pkgconf wayland-dev>=1.20"
 checkdepends="python3"
-source="$pkgname-$pkgver.tar.gz"
-builddir="$srcdir/$pkgname-$pkgver"
+source="$pkgname-$_sourcever.tar.gz"
+builddir="$srcdir/$pkgname-$_sourcever"
 
 build() {
     make all PREFIX=/usr

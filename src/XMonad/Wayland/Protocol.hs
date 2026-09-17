@@ -21,6 +21,10 @@ decodeAction kind argument = case kind of
   12 -> Just Stop
   13 -> Just SwapNext
   14 -> Just SwapPrevious
+  15 -> Just FocusNextOutput
+  16 -> Just FocusPreviousOutput
+  17 -> Just ToggleFloat
+  18 -> Just ToggleFullscreen
   _ -> Nothing
   where
     workspace constructor
@@ -37,4 +41,13 @@ decodeEvent kind ident a b c d = case kind of
   6 -> ActionRequested <$> decodeAction ident a
   9 -> Just Locked
   10 -> Just Unlocked
+  11 -> Just (WindowParent ident (if a == 0 then Nothing else Just (fromIntegral a)))
+  12 -> Just (WindowSizeHints ident (fromIntegral a) (fromIntegral b) (fromIntegral c) (fromIntegral d))
+  13 -> Just (WindowFullscreen ident (a /= 0))
+  14 -> Just (OutputWorkArea ident (Rect (fromIntegral a) (fromIntegral b) (fromIntegral c) (fromIntegral d)))
+  21 -> Just (PointerStarted (fromIntegral a) ident (fromIntegral b) (fromIntegral c) (fromIntegral d))
+  22 -> Just (PointerMoved ident (fromIntegral a) (fromIntegral b))
+  23 -> Just (PointerReleased ident)
+  24 -> Just (PointerCancelled ident)
+  25 -> Just (WindowActualSize ident (fromIntegral a) (fromIntegral b))
   _ -> Nothing
