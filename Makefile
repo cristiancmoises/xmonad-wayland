@@ -17,6 +17,7 @@ OBJECTS = build/bridge.o $(addprefix build/,$(addsuffix -protocol.o,$(PROTOCOLS)
 HASKELL = $(shell find src app vendor -name '*.hs')
 XWM_GHC_PATH ?= $(shell command -v $(GHC))
 XWM_SRC_DIR ?= $(PREFIX)/share/xmonad-wayland/src
+XWM_LDLIBS ?= $(shell $(PKG_CONFIG) --libs wayland-client)
 
 .PHONY: all test test-policy test-protocol test-runtime test-session test-keymap test-sway-policy test-bindings-protocol test-source-archive test-pointer-policy test-pointer-protocol test-xconfig test-xconfig-sample install uninstall clean check-deps FORCE
 all: build/xmonad-wayland
@@ -24,8 +25,13 @@ all: build/xmonad-wayland
 build:
 	mkdir -p build
 
-build/BuildInfo.hs: | build
-	@printf '%s\n' 'module BuildInfo where' 'ghcPath :: FilePath' 'ghcPath = "$(XWM_GHC_PATH)"' 'srcDir :: FilePath' 'srcDir = "$(XWM_SRC_DIR)"' > $@
+build/BuildInfo.hs: FORCE | build
+	@printf '%s\n' 'module BuildInfo where' \
+	  'ghcPath :: FilePath' 'ghcPath = "$(XWM_GHC_PATH)"' \
+	  'srcDir :: FilePath' 'srcDir = "$(XWM_SRC_DIR)"' \
+	  'bridgeObjects :: [FilePath]' \
+	  'bridgeObjects = ["$(PREFIX)/share/xmonad-wayland/lib/bridge.o","$(PREFIX)/share/xmonad-wayland/lib/river-window-management-v1-protocol.o","$(PREFIX)/share/xmonad-wayland/lib/river-xkb-bindings-v1-protocol.o","$(PREFIX)/share/xmonad-wayland/lib/river-layer-shell-v1-protocol.o"]' \
+	  'bridgeLibs :: [String]' 'bridgeLibs = words "$(XWM_LDLIBS)"' > $@
 
 check-deps:
 	$(PKG_CONFIG) --atleast-version=1.20 wayland-client
@@ -128,7 +134,8 @@ install: all
 	install -m755 build/xmonad-wayland "$(DESTDIR)$(PREFIX)/bin/"
 	install -m755 scripts/xmonad-wayland-session scripts/xmonad-wayland-doctor scripts/xmonad-wayland-nested.py scripts/xmonad-wayland-sway-input.py "$(DESTDIR)$(PREFIX)/bin/"
 	install -m644 packaging/xmonad-wayland.desktop "$(DESTDIR)$(PREFIX)/share/wayland-sessions/"
-	install -d "$(DESTDIR)$(PREFIX)/share/xmonad-wayland" "$(DESTDIR)$(PREFIX)/share/doc/xmonad-wayland"
+	install -d "$(DESTDIR)$(PREFIX)/share/xmonad-wayland" "$(DESTDIR)$(PREFIX)/share/doc/xmonad-wayland" "$(DESTDIR)$(PREFIX)/share/xmonad-wayland/lib"
+	install -m644 $(OBJECTS) "$(DESTDIR)$(PREFIX)/share/xmonad-wayland/lib/"
 	@set -eu; xw_source=$$(mktemp -d); \
 	trap 'rm -rf "$$xw_source"' EXIT HUP INT TERM; \
 	$(PYTHON) scripts/package-source.py --export-dir "$$xw_source"; \

@@ -111,8 +111,9 @@ main = xmonad $ def
 Depois rode `xmonad-wayland --recompile`. O gerenciador executa
 `~/.xmonad/xmonad-wayland-bin` automaticamente ao iniciar, e a ação
 `restart` o reexecuta, exatamente como o fluxo de recompilação do XMonad.
-O comando usa o GHC e as fontes instaladas registrados no pacote; não é
-preciso `ghc` no PATH nem perfil de shell.
+O comando usa o GHC de `$GHC` ou do PATH quando presente, e recorre ao
+GHC registrado no pacote; ele compila contra as fontes instaladas e
+liga a ponte C incluída.
 
 Suportado: `xmonad`, `def`, `XConfig`, `modMask`, `terminal`, `workspaces`
 (etiquetas numéricas), `layoutHook` com `tall`, `mirror`, `full`, `columns`,
