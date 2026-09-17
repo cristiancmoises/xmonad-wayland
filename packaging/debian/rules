@@ -16,5 +16,11 @@ override_dh_auto_test:
 override_dh_auto_install:
 	$(MAKE) install PREFIX=/usr DESTDIR=$(CURDIR)/debian/xmonad-wayland
 
+override_dh_shlibdeps:
+	@if readelf -l -d debian/xmonad-wayland/usr/bin/xmonad-wayland | grep -Eq '/(gnu|nix)/store/'; then \
+		echo 'Refusing a foreign-store-linked Debian binary; rebuild with native tools.' >&2; exit 1; \
+	fi
+	dh_shlibdeps
+
 override_dh_auto_clean:
 	$(MAKE) clean

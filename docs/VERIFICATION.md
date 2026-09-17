@@ -1,50 +1,82 @@
-# Verification record — 2026-09-16
+# Verification
 
-This release is experimental. Validation below concerns the window manager,
-not a complete desktop or all operating systems named in the packaging matrix.
+Version 0.2.0-dev is being developed on GNU Guix. This record distinguishes
+completed checks from the checks needed before replacing a daily desktop.
+Commands produce fresh results; the presence of a recipe or test is not a pass.
 
-## Environment
+## Automated checks
 
-Linux x86_64, Ubuntu 24.04 environment; GHC 9.4.7, Wayland 1.22.0, GCC and GNU
-make. Compiler and Wayland development dependencies were extracted from official
-Ubuntu packages to a local build prefix. No user desktop was changed.
+```sh
+make CC=gcc test
+```
 
-## Verified code behavior
+The suite covers window policy, protocol lifetimes, manage/render boundaries,
+subprocess cleanup, keymap validation, reload, confirmed exit and launcher
+behavior, including repeated termination signals and applications that ignore
+TERM after the manager exits. Policy runs include 15,000 general events and 12,000 Sway-oriented
+events, plus 7,500 pointer-policy events and directed geometry, transient,
+fullscreen, output and lock cases. The source-export tests check that private material stays outside archives.
 
-- Both Haskell and C compile. C passes `-Wall -Wextra -Werror -Wconversion`.
-- Pure Haskell tests cover focus/swap/view/shift, unique windows/workspaces,
-  output disconnect/reconnect, layout and ratio retention, tiny geometry,
-  Int32 coordinate bounds, large arithmetic and lock-state action suppression.
-- The actual ELF executable is exercised with a synthetic Wayland server through
-  an inherited Unix socket pair. It rejects missing and unavailable management
-  globals. Successful transactions cover geometry, focus, workspace shift/view,
-  output add/remove, closed windows, locking/unlocking and orderly stop.
-  The normal scenario validates 274 client requests; missing/unavailable cases
-  validate 2/4 requests. Separate SIGINT and SIGTERM scenarios validate clean
-  exit while idle after 86 requests each.
-- The protocol fixture validates request versions, manage/render phase ordering
-  and use-after-destroy at the protocol-object level. It is a deliberately small
-  server, not River, and cannot verify real rendering or application behavior.
-- A separate runtime fixture verifies C/Haskell phase discipline, literal command
-  arguments without shell expansion, child reaping and callback exception handling.
-  The test interpreter override also passed with a PATH containing python3.12
-  and no python3 alias.
-- The linked executable uses system libwayland-client, libgmp, libffi, libm and
-  libc. ELF inspection found no RPATH/RUNPATH to the build workspace.
+The unchanged upstream StackSet produces an unused-import warning with the
+host's GHC 9.10.2. The C bridge builds with `-Wall -Wextra -Werror`. The Guix
+recipe uses its pinned GHC and runs the package test target.
 
-Reproduce the tests with `make test`. The vendored unmodified StackSet has an
-existing unused `foldr` import warning under GHC 9.4.7; no source alteration was
-made just to suppress that upstream warning.
+## Actual River sessions
 
-## Package boundary
+```sh
+make CC=gcc all build/xdg-probe
+python3 tests/river_smoke.py --river /path/to/river
+```
 
-The source includes Debian, RPM, Arch, Alpine, FreeBSD and Guix build recipes.
-Local Linux amd64 Debian-format and x86_64 RPM builds are development artifacts.
-They require **glibc >=2.38** and a separately available compatible River. Use
-source builds on Debian 12/older Ubuntu, musl, other architectures and BSD.
-RPM generation on Ubuntu is not a Fedora or openSUSE installation test.
+The integration harness creates its own compositor and clients. It checks two
+outputs, Foot, Fuzzel, transient/fixed-size dialogs, fullscreen transitions and
+window destruction. It needs Foot, Fuzzel and Wayland protocol XML in addition
+to the compiled manager. Use `--backend wayland --renderer gles2` for a nested
+trial in an existing Wayland session with a compatible accelerated River build.
+The default is an isolated headless pixman session.
 
-No native Arch/Alpine/Guix/BSD build, package-manager installation, real River
-session, DRM/GPU, physical monitor, performance benchmark or security audit has
-been completed. Existing arbitrary XMonad configurations have not been ported.
-Those are remaining acceptance gates, not implied capabilities of this archive.
+Completed Guix trials include real River 0.4.8 headless and nested sessions. A
+machine-specific River build using the existing NVIDIA package transformation
+also passed the nested GLES2 test on an RTX 4060. The ordinary Mesa closure
+failed that NVIDIA initialization, so selecting an EGL environment variable
+alone is not presented as a fix.
+
+The real pointer harness also exercised Super+button movement, corner resizing
+and client-side resize requests in an isolated River session. These tests use
+virtual input; they do not inject keys into the host desktop.
+
+The local Sway-derived profile has 74 keyboard bindings. The unused Super+o
+binding was deliberately removed; other conflicts follow the active Sway
+configuration. The user confirmed a visible Kitty terminal and Super+Enter
+opening another terminal inside River. Separate automated checks verified the
+ABNT2 keymap, window operations, private diagnostics and owned-process cleanup.
+These checks do not establish physical keyboard/touchpad behavior.
+
+The README screenshots are unedited captures of controlled nested sessions.
+Only prepared demonstration terminals appear in them. They demonstrate actual
+window placement, not physical-session acceptance or test results.
+
+## Guix packaging
+
+`./scripts/guix-build` authenticates the pinned official channel and builds River
+and the manager with tests enabled. Source pins and licensing are recorded in
+[the source inventory](../packaging/guix/SOURCES.md). The [Guix recipe notes](../packaging/guix/README.md)
+explain the channel pin, optional input daemon and NVIDIA package transformation.
+
+Local build, lint and style checks have passed on the earlier deployed snapshot.
+Every new source change needs a fresh build before deployment. Network source
+and vulnerability checks have also encountered timeouts; local lint does not
+replace those remote checks. Public homepage/release metadata remains pending
+publication. No source origin or public package URL is invented for this local
+`local-file` recipe.
+
+## Remaining acceptance
+
+Physical DRM/seat access, monitor hotplug/scaling, touchpad behavior,
+suspend/resume, screen-lock recovery and sustained daily use remain unverified.
+Testing currently stays inside Sway at the user's request. The replacement
+system configuration remains a candidate and has not been activated.
+
+The present target is GNU Guix. Earlier experiments with other distributions are
+outside this release scope. No production, external security audit, upstream
+endorsement or arbitrary XMonad/contrib compatibility is claimed.

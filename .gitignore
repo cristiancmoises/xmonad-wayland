@@ -1,0 +1,10 @@
+/build/
+/stage/
+/dist/
+/result
+/evidence/
+/GOD-TIER-PROMPT.md
+/docs/superpowers/
+*.hi
+*.o
+__pycache__/

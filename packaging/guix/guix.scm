@@ -1,33 +1,85 @@
-;;; Local build recipe; not evaluated or built with Guix in this release.
+;;; SPDX-License-Identifier: BSD-3-Clause
+;;; Local development build; checks are recorded in evidence/guix-*.log.
 ;;; Run from the source root: guix build -f packaging/guix/guix.scm
 ;;; Intentionally no propagated River: older Guix river 0.3.12 is incompatible.
 (use-modules (guix packages)
              (guix gexp)
+             (guix utils)
              (guix build-system gnu)
-             ((guix licenses) #:prefix license:)
+             ((guix licenses)
+              #:prefix license:)
              (gnu packages haskell)
              (gnu packages pkg-config)
              (gnu packages python)
-             (gnu packages freedesktop))
+             (gnu packages freedesktop)
+             (ice-9 textual-ports)
+             (srfi srfi-1)
+             (srfi srfi-13))
+
+;; The same reviewed list drives release archives and installed source.
+(define %source-directory
+  (canonicalize-path (string-append (dirname (current-filename)) "/../..")))
+
+(define %source-entries
+  (filter (lambda (line)
+            (and (not (string-null? line))
+                 (not (string-prefix? "#" line))))
+          (map string-trim-both
+               (string-split (call-with-input-file (string-append
+                                                    %source-directory
+                                                    "/scripts/source-manifest")
+                               get-string-all) #\newline))))
+
+(define (public-source? file stat)
+  (let ((relative (if (string=? file %source-directory) ""
+                      (string-drop file
+                                   (+ 1
+                                      (string-length %source-directory))))))
+    (and (not (any (lambda (part)
+                     (member part
+                             '(".git" "__pycache__"
+                               "build"
+                               "stage"
+                               "result"
+                               "evidence"
+                               "dist"
+                               ".guix-runtime")))
+                   (string-split relative #\/)))
+         (not (eq? (stat:type stat)
+                   'symlink))
+         (not (any (lambda (suffix)
+                     (string-suffix? suffix relative))
+                   '(".pyc" ".o" ".hi" ".deb" ".rpm" ".tar.gz")))
+         (or (string-null? relative)
+             (any (lambda (entry)
+                    (or (string=? relative entry)
+                        (string-prefix? (string-append entry "/") relative)
+                        (string-prefix? (string-append relative "/") entry)))
+                  %source-entries)))))
 
 (package
   (name "xmonad-wayland")
-  (version "0.1.0")
+  (version "0.2.0-dev")
   (source
-   (local-file "../.." "xmonad-wayland-0.1.0-source"
+   (local-file %source-directory
+               "xmonad-wayland-0.2.0-dev-source"
                #:recursive? #t
-               #:select? (lambda (file stat)
-                           (not (member (basename file)
-                                        '(".git" "build" "stage" "result"))))))
+               #:select? public-source?))
   (build-system gnu-build-system)
   (arguments
-   ;; GNU make defaults to cc, but the Guix toolchain supplies gcc.
-   (list #:make-flags #~(list "CC=gcc" (string-append "PREFIX=" #$output))
-         #:test-target "test"
-         #:phases #~(modify-phases %standard-phases
-                      (delete 'configure))))
-  (native-inputs (list ghc-9.2 pkg-config python-minimal wayland))
-  (inputs (list wayland))
+   ;; Make's built-in CC is not necessarily the compiler for this target.
+   (list
+    #:make-flags
+    #~(list (string-append "CC="
+                           #$(cc-for-target))
+            (string-append "PREFIX="
+                           #$output))
+    #:test-target "test"
+    #:phases
+    #~(modify-phases %standard-phases
+        (delete 'configure))))
+  (native-inputs (list ghc-9.2 pkg-config wayland))
+  (inputs (list wayland python-minimal))
   ;; No public project homepage has been assigned to this local prototype.
   (home-page #f)
   (synopsis "Experimental XMonad StackSet window manager for River Wayland")

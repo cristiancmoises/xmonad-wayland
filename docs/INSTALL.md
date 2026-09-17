@@ -1,302 +1,123 @@
-# Building and installing the experimental port
+# Install and run on GNU Guix
 
-This is an independent prototype, not an upstream XMonad release. It installs
-`xmonad-wayland` alongside existing window managers. It requires **River 0.4 or
-newer** to run a graphical session. River classic and River 0.3 do not implement
-the required window-management protocol. Building this manager does not build
-or install River, and a successful build does not establish compositor or GPU
-compatibility.
+[Português do Brasil](INSTALL.pt-BR.md) · [Project overview](../README.md)
 
-The recipes below are local source recipes, not packages published by the named
-distributions. The Fedora/openSUSE, Arch, Alpine, FreeBSD and Guix recipes have
-not been built in their target environments. Consult the release verification
-report for the actual local Debian build and test results; the existence of a
-Debian-format package alone does not validate every Debian/Ubuntu release.
+Version **0.2.0-dev** is for development and testing. Start inside an existing
+Wayland desktop. On the maintainer's laptop a physical River login session has
+been running since September 2026; the steps below document the portable,
+nested way of trying the manager anywhere.
 
-## Requirements
+## Build the local profile
 
-| Purpose | Requirement |
+You need a working Guix installation with access to its build daemon, this source
+checkout and internet access for uncached dependencies. Run these commands from
+the project directory as your normal user:
+
+```sh
+./scripts/guix-build
+./run.sh --doctor
+```
+
+The script authenticates the Guix revision in `packaging/guix/channels.scm`, builds
+the pinned River 0.4.8 and the manager from your current checkout, and runs their
+package tests. It creates:
+
+| Path | Contents |
 | --- | --- |
-| Haskell build | GHC >= 9.0, with boot libraries `base`, `containers`, `transformers`, `process`, `directory` and their static development libraries |
-| C build | C11 compiler (GCC or Clang), GNU make, pkg-config |
-| Wayland build | libwayland-client development files and wayland-scanner >= 1.20 |
-| Tests | Python 3; no live compositor required for the protocol fixture |
-| Graphical session | River >= 0.4, its normal seat/device/session setup, and a usable `XDG_RUNTIME_DIR` |
-| Default shortcuts | `foot` terminal and `fuzzel` launcher, or change the Haskell configuration |
+| `build/guix-river` | River output, kept as a garbage-collector root |
+| `build/guix-manager` | Manager output, kept as a garbage-collector root |
+| `build/guix-runtime` | Dedicated profile with both programs, Foot, Fuzzel and fonts |
 
-The source includes the required River protocol XML and XMonad StackSet; no
-Hackage dependency download or wlroots development package is required by this
-manager. River has its own additional build and runtime dependencies. Package
-names and River versions vary with the selected distribution release.
+Your default Guix profile, channel configuration and login session are not
+changed. `--doctor` checks executable availability, versions and the session
+runtime directory; it does not start River or certify graphics support.
+The script prints its log path under `evidence/`. These are locally generated
+build records, not files required by the published source.
 
-Useful checks before building:
+To limit build concurrency or omit the combined application profile:
 
 ```sh
-ghc --numeric-version
-ghc-pkg list
-pkg-config --modversion wayland-client
-wayland-scanner --version
-python3 --version
+GUIX_BUILD_CORES=2 ./scripts/guix-build
+./scripts/guix-build --build-only
 ```
 
-## Build and stage without root
+`--build-only` requires you to supply your terminal and launcher separately.
+Run the full command again after editing the source to rebuild the dedicated
+profile. It uses the pinned channel without running `guix pull` on your profile.
 
-Run in the extracted `xmonad-wayland-0.1.0` directory:
+## Open a nested session
+
+Inside your current Wayland desktop:
 
 ```sh
-make all
-make test
-make install PREFIX=/usr DESTDIR="$PWD/stage"
+./run.sh --nested
 ```
 
-The last command stages files under `stage/usr`; it does not install to `/usr`.
-GNU make is called `gmake` on BSD systems. `CC`, `GHC`, `PKG_CONFIG`,
-`WAYLAND_SCANNER`, and `PYTHON` can be overridden on the make command line.
+River opens in a separate window with a Foot terminal. The launcher chooses
+the Wayland backend and a private runtime directory. Click the River window,
+then use **Super+Return** for another Foot or **Super+p** for Fuzzel.
 
-For an installation owned by your normal user:
+When the outer desktop is Sway, a temporary mode forwards shortcuts only while
+this River window is focused. **Ctrl+Alt+Escape** releases them. To capture again,
+focus another window and return to River. Existing Sway bindings and files are
+preserved. Other compositors may still intercept Super shortcuts.
 
-```sh
-make install PREFIX="$HOME/.local"
-export PATH="$HOME/.local/bin:$PATH"
-```
+Python 3 is included by the Guix package for nested process supervision. To use
+another installed terminal for initial startup, set `XMONAD_WAYLAND_TERMINAL` to
+one executable path. It is treated literally, without arguments or shell syntax.
+This setting is separate from the Haskell `terminalCommand` shortcut.
 
-Files installed below `PREFIX` include:
+The launcher prints a diagnostics path under `$XDG_STATE_HOME/xmonad-wayland`
+(default `~/.local/state/xmonad-wayland`). Each session gets a private directory
+and separate River, manager, terminal and Sway-helper logs. Interactive Wayland
+protocol tracing is disabled; the logs do not record keystrokes.
 
-| Path | Purpose |
+Close the nested River window through the outer desktop to finish. The generic
+Super+Shift+q shortcut stops only the manager, leaving River and applications
+running; it is not a logout or lock action.
+
+The machine-specific launcher named `xmonad-wayland-river` is separate from this
+generic `run.sh`/`xmonad-wayland-session` workflow. Its 74 custom Sway-derived
+bindings, automatic Kitty and Channel input rules belong to that local
+deployment. The generic package provides its own terminal startup, private logs
+and Sway forwarding, with the generic keyboard defaults.
+
+## Physical sessions and NVIDIA
+
+From a separate text-console login with working seat/device permissions and a
+valid `XDG_RUNTIME_DIR`, `./run.sh` can start River directly. Configure those
+permissions and your graphics stack through your Guix system configuration.
+The launcher refuses root; running it with sudo is not a setup step.
+
+The generic package neither configures a display manager nor selects a default
+session. It does not supply input-device rules, automatic locking, notifications,
+clipboard management, portals or a complete desktop service. Configure and test
+these separately before replacing your existing session.
+
+Proprietary NVIDIA Guix systems need a River package built with the same
+Mesa-to-NVIDIA transformation as the rest of their graphics stack. Selecting an
+EGL vendor JSON file alone does not replace linked Mesa libraries. A separate
+machine configuration has passed accelerated nested tests with that
+transformation; the generic free-software profile does not apply it. Direct DRM
+output, physical input, hotplug and suspend/resume remain acceptance checks.
+
+## Configure and diagnose
+
+The generic defaults are Foot, Fuzzel and nine workspaces, as listed in the
+[README](../README.md#default-keyboard-controls). A custom Haskell entrypoint can
+change them and add reloadable bindings. Follow [configuration](CONFIGURATION.md)
+for the API; an existing X11 `xmonad.hs` cannot be used unchanged.
+
+| Symptom | What to check |
 | --- | --- |
-| `bin/xmonad-wayland` | Native Wayland window-manager client |
-| `bin/xmonad-wayland-session` | Starts a dedicated River session |
-| `share/wayland-sessions/xmonad-wayland.desktop` | Optional display-manager session entry |
-| `share/xmonad-wayland/` | Haskell/C source, protocol XML and examples |
-| `share/doc/xmonad-wayland/` | README, documentation and license notices |
+| `guix` is missing or the daemon is unreachable | Confirm that the Guix installation can build packages before running the project script. |
+| Missing or incompatible River | Run the full build script. River 0.3 and river-classic cannot host this manager. |
+| Invalid `XDG_RUNTIME_DIR` | Start from a normal logged-in session with its own writable runtime directory. |
+| Empty nested window | Check terminal.log in the printed diagnostics directory; verify the configured initial terminal and Sway forwarding. |
+| Renderer fails before a window appears | Read the launcher's terminal output and check the Guix graphics stack, especially Mesa/NVIDIA linkage. |
+| Terminal or launcher unavailable | Use the full profile build or configure installed commands; `--build-only` omits these applications. |
 
-Display managers may not discover a session entry installed under a user prefix.
-For a system-wide session entry, use a package or an administrator-approved
-system prefix. None of these recipes overwrites `xmonad`, changes the default
-display manager, edits `river/init`, or installs user configuration.
-
-## Starting a session
-
-First check `river -version` and ensure it is >= 0.4. Set up River's seat/device
-access using its documentation for your OS. From a normal user's appropriate
-graphical login/TTY environment, run:
-
-```sh
-xmonad-wayland-session
-```
-
-The launcher passes a fixed startup command to River and runs this manager as
-its window-management client. Running `xmonad-wayland` in a generic Wayland
-desktop such as GNOME or KDE will not work: River's management globals must be
-available to the process. The launcher does not start session-lock, notification,
-clipboard, panel, wallpaper or portal services. This prototype is not a complete
-desktop environment. Review its limitations before using it as a daily session.
-
-## Debian and Ubuntu source packaging
-
-Build prerequisites include `build-essential`, `ghc`, `pkg-config`,
-`libwayland-dev`, `libwayland-bin`, `python3`, and `debhelper` >= 13. The selected
-GHC and Wayland packages must meet the minimum versions above. Boot Haskell
-libraries are supplied with Debian's GHC package.
-
-With the supplied source archive beside the extracted source directory:
-
-```sh
-cp ../xmonad-wayland-0.1.0.tar.gz ../xmonad-wayland_0.1.0.orig.tar.gz
-cp -a packaging/debian debian
-dpkg-buildpackage -us -uc
-```
-
-Use a clean extraction and copy the packaging directory only once. This produces
-an unsigned local source package and binary package; `dpkg-buildpackage -us -uc
--b` requests only the binary build. The recipes do not publish either package.
-Inspect the resulting package before installation:
-
-```sh
-dpkg-deb --info ../xmonad-wayland_0.1.0-1_*.deb
-dpkg-deb --contents ../xmonad-wayland_0.1.0-1_*.deb
-```
-
-The Debian package recommends `river (>= 0.4)` rather than requiring a particular
-packaged compositor, allowing River built separately from source. This is an
-installation convenience, **not** support for running without compatible River.
-On a release with only River 0.3, install a suitable newer River separately; an
-older compositor cannot be made compatible by bypassing package dependencies.
-
-## Fedora and openSUSE RPM
-
-`packaging/rpm/xmonad-wayland.spec` is a shared local recipe. It declares GHC's
-individual boot-library development packages, Wayland pkg-config providers,
-GCC, make and Python 3. No public project URL or remote source download is
-invented. Supply the release archive locally and install the declared
-BuildRequires with your distribution's package tools.
-
-```sh
-mkdir -p ../rpm-build/BUILD ../rpm-build/BUILDROOT ../rpm-build/RPMS
-mkdir -p ../rpm-build/SOURCES ../rpm-build/SPECS ../rpm-build/SRPMS
-cp ../xmonad-wayland-0.1.0.tar.gz ../rpm-build/SOURCES/
-rpmbuild --define "_topdir $(cd ../rpm-build && pwd)" \
-  -ba packaging/rpm/xmonad-wayland.spec
-```
-
-The RPM has `Requires: river >= 0.4`. Fedora's current package index lists River
-0.4.8 for Fedora 44/45; Fedora 43's old River branch is not sufficient. Check
-the active repository before installation. On openSUSE, inspect the selected
-Tumbleweed/Leap repository for a compatible River and GHC; no openSUSE runtime
-validation is claimed. [Fedora River packages](https://packages.fedoraproject.org/pkgs/river/river/)
-
-## Arch local-source package
-
-The PKGBUILD is restricted to x86_64, the architecture documented by the
-available official GHC packages. It includes `ghc-static`: Arch splits static
-boot libraries from the compiler. [Arch ghc-static](https://archlinux.org/packages/extra/x86_64/ghc-static/)
-
-```sh
-cp ../xmonad-wayland-0.1.0.tar.gz packaging/arch/
-cd packaging/arch
-updpkgsums
-makepkg -s
-```
-
-`updpkgsums` comes from `pacman-contrib`. It replaces the explicitly marked local
-`SKIP` bootstrap value with the digest of your archive. Verify the archive against
-the supplied release checksums before recording this digest. No remote source
-or AUR publication is configured. Runtime dependencies require River >= 0.4.
-
-## Alpine local-source package
-
-The APKBUILD targets x86_64 and needs a repository with suitable GHC and River
-versions. It declares both `ghc` and `ghc-dev`, plus `wayland-dev`, which supplies
-the scanner. Prepare your normal unprivileged abuild environment and signing
-key following Alpine's package-building instructions, then:
-
-```sh
-cp ../xmonad-wayland-0.1.0.tar.gz packaging/alpine/
-cd packaging/alpine
-abuild checksum
-abuild -r
-```
-
-The initially empty checksum list must be populated by `abuild checksum`; no
-digest is fabricated. The package metadata's `file:` URL points to its installed
-local README because this prototype has no published homepage. This local
-recipe is not submission-ready aports metadata. Alpine edge's package index
-contains River 0.4.x; do not assume an older stable branch does.
-[Alpine River](https://pkgs.alpinelinux.org/package/edge/community/x86_64/river),
-[Alpine GHC development files](https://pkgs.alpinelinux.org/package/edge/community/x86_64/ghc-dev),
-[abuild guide](https://wiki.alpinelinux.org/wiki/Creating_an_Alpine_package)
-
-## FreeBSD local port and other BSD systems
-
-The directory `packaging/freebsd` is a local port recipe using the system ports
-framework. It fetches no remote archive. With a current ports tree and compatible
-dependencies installed, use a private distfiles directory to generate real
-`distinfo` from the archive:
-
-```sh
-mkdir -p ../freebsd-distfiles
-cp ../xmonad-wayland-0.1.0.tar.gz ../freebsd-distfiles/
-xw_distdir=$(cd ../freebsd-distfiles && pwd)
-cd packaging/freebsd
-make DISTDIR="$xw_distdir" makesum
-make DISTDIR="$xw_distdir" test stage package
-```
-
-These are FreeBSD `make` commands: the ports framework invokes GNU make for the
-project. `stage` does not install the package on the host. Current FreeBSD ports
-provide River >= 0.4, but quarterly repositories can differ. This port recipe and
-a real River session still require native verification; a Linux-built binary
-does not run as a native FreeBSD package.
-[FreeBSD River port](https://cgit.freebsd.org/ports/tree/x11-wm/river),
-[FreeBSD port testing](https://docs.freebsd.org/en/books/porters-handbook/testing/)
-
-OpenBSD current has River 0.4.5 in ports. No OpenBSD binary or tested package
-recipe is supplied. Install matching GHC >= 9.0, gmake, pkgconf, Wayland headers
-and scanner, and Python 3; then use the generic source commands with `gmake`.
-Set `PYTHON` to the installed versioned Python command if no `python3` alias is
-available. Check seat access and session startup against OpenBSD's River package
-documentation. Compilation and runtime remain unverified here.
-
-NetBSD and DragonFly BSD remain unverified. The existence of Wayland or GHC
-packages is insufficient to claim that River's current compositor stack works
-there. No working package, compositor port, or hardware-session support is
-claimed for either system.
-
-## Guix: manager build, compositor supplied separately
-
-```sh
-guix build -f packaging/guix/guix.scm
-```
-
-The recipe imports the local source tree with `local-file`, uses Guix's GHC 9.2,
-Wayland and Python, deletes the unused configure phase, and runs `make test`.
-It does not rely on an invented release URL or fixed-output hash. Start from a
-clean source extraction; generated build/stage directories are excluded.
-[Guix local-source build pattern](https://guix.gnu.org/cookbook/en/html_node/Building-with-Guix.html)
-
-This builds **only the manager**. Some Guix revisions still provide River 0.3.12,
-which is incompatible. The recipe deliberately does not propagate that package
-and does not select an unknown third-party channel for you. Before attempting a
-session, obtain River >= 0.4 from a suitable channel, a current compatible Guix
-package, or a separately managed installation and confirm `river -version`.
-
-To install the manager into the current user's profile:
-
-```sh
-guix package -f packaging/guix/guix.scm
-```
-
-The manager and compatible River must both be on the session's `PATH`. Guix
-System display-manager discovery and seat/session configuration are separate
-tasks; this recipe does not declare an operating-system service or change your
-system configuration. The Guix recipe has not been evaluated or built here, and
-there is no claim of a working Guix desktop session.
-
-## Downloaded development binaries
-
-The release includes `xmonad-wayland_0.1.0-1_amd64.deb` and
-`xmonad-wayland-0.1.0-1.x86_64.rpm`. Both are Linux x86_64 development builds
-made in an Ubuntu 24.04 environment, requiring glibc >=2.38. They have not been
-installed into a native Debian/Fedora desktop. Use the source recipe for older
-systems, other architectures, Alpine/musl and every BSD.
-
-After verifying `SHA256SUMS`, an appropriate Debian/Ubuntu system can install
-the local `.deb` with `sudo apt install ./xmonad-wayland_0.1.0-1_amd64.deb`.
-For a suitable Fedora system, use
-`sudo dnf install ./xmonad-wayland-0.1.0-1.x86_64.rpm`.
-Package installation does not validate or start a River session. Read the
-platform matrix and keep your existing window manager available.
-
-## Haskell configuration
-
-Edit `examples/Main.hs`, which uses this port's Config and Runtime modules.
-From the extracted source directory, build your selected configuration with:
-
-```sh
-make MAIN=examples/Main.hs
-```
-
-This replaces only `build/xmonad-wayland` in the source tree. To install that
-configuration, keep passing the same selection:
-
-```sh
-make install MAIN=examples/Main.hs PREFIX="$HOME/.local"
-```
-
-To rebuild the supplied defaults, use `make MAIN=app/Main.hs`. The current API
-configures terminal/launcher argv and layout defaults; keyboard bindings and
-border colors live in `cbits/bridge.c`. There is no automatic config compilation
-or state-preserving reload. Existing X11 `xmonad.hs` files need a manual port.
-
-## Uninstall
-
-For a source installation, use the same prefix as the original install:
-
-```sh
-make uninstall PREFIX="$HOME/.local"
-```
-
-For managed packages, use the package manager, for example
-`sudo apt remove xmonad-wayland`, `sudo dnf remove xmonad-wayland`, or
-`guix remove xmonad-wayland`. Removal does not delete user configuration or
-remove an independently installed compositor.
+Build failures remain in the log printed by `guix-build`; renderer and manager
+diagnostics for nested sessions stay in the printed private directory. Further details are in
+[Guix packaging](../packaging/guix/README.md),
+[security boundaries](SECURITY.md) and [source provenance](PROVENANCE.md).

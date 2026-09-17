@@ -1,0 +1,103 @@
+# XMonad Wayland
+
+[English](README.md)
+
+Gerenciador de janelas em Haskell para **River 0.4+**, usando o StackSet original
+do XMonad para organizar janelas, foco e áreas de trabalho. O River cuida dos
+gráficos, da entrada e dos clientes Wayland/XWayland; este projeto define como
+as janelas são gerenciadas.
+
+**A versão 0.2.0-dev está em desenvolvimento para GNU Guix.** Desde setembro de
+2026 ela roda em uma sessão real de login com o River em um notebook Predator
+Helios (NVIDIA RTX 4060 mais Intel) pelo canal SecurityOps, e em sessões
+aninhadas para experimentar em qualquer desktop Wayland. A aceitação de uso
+diário — suspensão, conexão de monitores, bloqueio de tela — ainda está sendo
+avaliada. Este projeto é independente, sem vínculo oficial com o XMonad;
+arquivos `xmonad.hs` para X11 e módulos arbitrários do `xmonad-contrib` não são
+compatíveis.
+
+![XMonad Wayland rodando no River](screenshots/river-xmonad-fastfetch.png)
+
+Captura sem edição da sessão real do notebook: um terminal rodando o fastfetch
+com o gerenciador e o compositor detectados.
+
+## Experimentar no Guix
+
+No diretório do projeto, com seu usuário normal:
+
+```sh
+./scripts/guix-build
+./run.sh --doctor
+./run.sh --nested
+```
+
+Execute o último comando dentro de um desktop **Wayland**. O River abrirá em
+uma janela com um terminal Foot. Clique nela e use **Super+Return** para outro
+terminal ou **Super+p** para o Fuzzel. Super é a tecla Windows/logotipo; Return é Enter.
+
+Dentro do Sway, os atalhos são encaminhados enquanto a janela River tem foco.
+**Ctrl+Alt+Escape** devolve o controle ao Sway; tire o foco do River e volte a ele
+para capturar novamente. Outros compositores externos podem precisar de ajustes
+próprios. Feche a janela River ao terminar. O lançador informa o diretório privado
+de diagnóstico. Consulte o [guia de instalação](docs/INSTALL.pt-BR.md).
+
+O script usa versões fixadas do Guix e River 0.4.8, executa os testes dos pacotes
+e cria `build/guix-runtime` com o gerenciador, River, Foot, Fuzzel e fontes.
+Seu perfil padrão, canais e sessão de login permanecem inalterados. A primeira
+compilação pode demorar; o script informa onde está o registro da compilação.
+
+## Atalhos padrão
+
+Estes são os **padrões genéricos**, com nove áreas de trabalho. O perfil Guix
+configurado separadamente para o notebook tem 74 atalhos derivados do Sway e
+outros comandos. Instalar o pacote genérico não importa esse perfil.
+
+| Atalho | Ação |
+| --- | --- |
+| Super+Return | Abrir o Foot |
+| Super+p | Abrir o Fuzzel |
+| Super+j / k | Focar a próxima janela / a anterior |
+| Super+Shift+j / k | Trocar de posição com a próxima janela / a anterior |
+| Super+Shift+Return | Trocar de posição com a janela principal |
+| Super+Space | Alternar entre Tall, Mirror e Full |
+| Super+h / l | Diminuir / aumentar a área principal |
+| Super+1…9 | Ir para uma área de trabalho |
+| Super+Shift+1…9 | Mover a janela focada e suas janelas transitórias |
+| Super+period / comma | Focar o próximo monitor / o anterior |
+| Super+t | Alternar o modo flutuante |
+| Super+f | Alternar tela cheia |
+| Super+Shift+c | Solicitar o fechamento do aplicativo focado |
+| Super+Shift+q | Parar o gerenciador |
+
+Parar o gerenciador não encerra nem bloqueia a sessão. O River e os aplicativos
+continuam em execução. Para retomar o gerenciamento, execute `xmonad-wayland`
+em um terminal dentro daquela sessão do River.
+
+## Configuração e limites atuais
+
+Um ponto de entrada Haskell personalizado pode definir comandos, modos de teclado,
+áreas de trabalho, cursor e layouts. Uma configuração recarregável opcional
+permite atualizar os atalhos preservando as janelas abertas. Consulte a
+[documentação de configuração](docs/CONFIGURATION.pt-BR.md). O executável
+genérico não lê automaticamente `~/.xmonad/xmonad.hs` nem o arquivo de atalhos
+do perfil do notebook.
+
+Os layouts disponíveis são Tall, Mirror, Full, Columns, Rows, Tabbed e Stacking.
+Há suporte a vários monitores, diálogos transitórios, tela cheia e superfícies
+layer-shell, como o Fuzzel. Tabbed/Stacking não desenham abas, e os layouts se
+aplicam à área de trabalho inteira, sem a árvore de contêineres aninhados do Sway.
+
+Uma sessão física está em uso no notebook do mantenedor desde setembro de 2026,
+incluindo a saída NVIDIA DRM direta. Suspensão, conexão de monitores, bloqueio
+de tela e uso diário prolongado ainda estão sendo avaliados. Entrada,
+notificações, portais, papel de parede e bloqueio precisam de programas e
+configuração de sessão próprios. Políticas independentes para vários seats e
+persistência de layouts após reiniciar o gerenciador ainda não estão
+implementadas.
+
+## Licença e origem do código
+
+O projeto usa a **licença BSD de 3 cláusulas**, a mesma do XMonad. O StackSet
+incluído mantém os direitos autorais e a licença originais. Os arquivos XML dos
+protocolos do River mantêm a licença MIT. Consulte [LICENSE](LICENSE),
+[origem do código](docs/PROVENANCE.md) e [limites de segurança](docs/SECURITY.pt-BR.md).

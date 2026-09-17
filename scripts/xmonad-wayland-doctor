@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: BSD-3-Clause
+# Read-only preflight: does not connect to, launch or modify the desktop.
+set -u
+failed=0
+printf 'Platform: %s %s\n' "$(uname -s)" "$(uname -m)"
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+if [ -x "$script_dir/xmonad-wayland-session" ]; then
+    sh "$script_dir/xmonad-wayland-session" --check || failed=1
+else
+    echo 'Session launcher is missing.' >&2
+    failed=1
+fi
+manager=${XMONAD_WAYLAND_MANAGER:-xmonad-wayland}
+if command -v "$manager" >/dev/null 2>&1; then
+    "$manager" --version || failed=1
+fi
+for app in foot fuzzel; do
+    if command -v "$app" >/dev/null 2>&1; then
+        printf 'Default command: %s available\n' "$app"
+    else
+        printf 'Default command missing: %s (install it or change the Haskell configuration)\n' "$app"
+        failed=1
+    fi
+done
+for app in swaylock swayidle dbus-run-session; do
+    if command -v "$app" >/dev/null 2>&1; then
+        printf 'Optional session tool: %s available\n' "$app"
+    fi
+done
+printf 'Display: WAYLAND_DISPLAY=%s DISPLAY=%s\n' "${WAYLAND_DISPLAY:-unset}" "${DISPLAY:-unset}"
+echo 'This preflight does not certify graphics, screen locking, portals or BSD execution.'
+exit "$failed"

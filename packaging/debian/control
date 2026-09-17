@@ -5,6 +5,7 @@ Maintainer: Local Builder <root@localhost>
 Build-Depends: debhelper-compat (= 13),
  ghc (>= 9.0),
  gcc,
+ binutils,
  make,
  pkg-config,
  libwayland-dev (>= 1.20),

@@ -1,110 +1,99 @@
-# XMonad Wayland — experimental 0.1.0
+# XMonad Wayland
 
-An independent native Wayland port of **XMonad's real Haskell StackSet core**,
-using **River 0.4 or newer** as the compositor. This is a development release,
-not an official XMonad release, a finished replacement, or xmonad-contrib compatibility.
+[Português do Brasil](README.pt-BR.md)
 
-The unchanged upstream StackSet manages window order, focus and workspaces.
-New Haskell code manages layouts and translates state to River's native Wayland
-window-management protocol through a small C/libwayland-client bridge. There is
-no X11 connection in this manager. River handles rendering and devices; X11
-applications require River's optional XWayland support.
+A Haskell window manager for **River 0.4+**, using XMonad's unmodified StackSet
+for window order, focus and workspaces. River handles graphics, input and
+Wayland/XWayland clients; this project supplies the window-management policy.
 
-## What is implemented
+**0.2.0-dev is a development release for GNU Guix.** Since September 2026 it
+runs in a real River login session on a Predator Helios laptop (NVIDIA RTX 4060
+plus Intel) through the SecurityOps channel, and in nested sessions for trying
+it out on any Wayland desktop. Daily-use acceptance — suspend/resume, monitor
+hotplug, screen locking — is still being evaluated. This is an independent
+project, not an official XMonad release; existing X11 `xmonad.hs` files and
+arbitrary `xmonad-contrib` modules are not compatible.
 
-- Nine workspaces, focus cycling, swap master, swap next/previous and move windows.
-- Tall, Mirror and Full layouts, with a separate layout/ratio per workspace.
-- Output addition/removal and preservation of windows when outputs disappear.
-- Click-to-focus and keyboard bindings on the oldest live seat.
-- Haskell configuration of terminal, launcher and layout defaults.
-- Cyan focus borders and no desktop shell assets/background service.
-- Debian, RPM, Arch, Alpine, FreeBSD and Guix packaging materials.
+![XMonad Wayland running on River](screenshots/river-xmonad-fastfetch.png)
 
-## Build
+Unmodified capture from the real laptop session: a terminal running fastfetch
+with the manager and compositor detected.
 
-Install GHC >=9.0 with its `base`, `containers`, `transformers` and `process`
-libraries, a C compiler, GNU make, pkg-config, Wayland headers and wayland-scanner
->=1.20, and Python 3 for integration tests. No Cabal/Hackage network download is
-needed during the build.
+## Try it on Guix
+
+From the project directory, as your normal user:
 
 ```sh
-make check-deps
-make -j2
-make test
-make install PREFIX="$HOME/.local"
+./scripts/guix-build
+./run.sh --doctor
+./run.sh --nested
 ```
 
-Ensure `$HOME/.local/bin` is on PATH. See [installation and packaging](docs/INSTALL.md)
-for distribution-specific commands, Guix, BSDs, and uninstall instructions.
+Run the last command inside an existing **Wayland** desktop. River opens in a
+nested window with a Foot terminal. Click it, then press **Super+Return** for
+another terminal or **Super+p** for Fuzzel. Super means the Windows/logo key.
 
-## Run safely
+Inside Sway, shortcuts are forwarded while the River window has focus.
+**Ctrl+Alt+Escape** returns control to Sway; leave and refocus River to capture
+again. Other outer compositors may need their own shortcut setup. Close the
+River window when finished. The launcher prints a private diagnostics directory.
+See the [installation guide](docs/INSTALL.md) for NVIDIA setup and troubleshooting.
 
-Keep your existing desktop session available. From a terminal in that session,
-with a compatible River already installed, run:
+The build script uses pinned Guix dependencies and River 0.4.8, runs package
+tests, and creates `build/guix-runtime` with the manager, River, Foot, Fuzzel
+and fonts. It leaves your default profile, channels and login session unchanged.
+The first build can take a while; it prints the build-log path.
 
-```sh
-xmonad-wayland-session
-```
+## Default keyboard controls
 
-River can run nested; this is the recommended first real desktop test. The
-launcher uses `river -c 'exec xmonad-wayland'` and does not overwrite `river/init`.
-To use an existing River 0.4 session whose window manager has stopped, run
-`xmonad-wayland` directly in that session. A compositor with no required River
-protocol globals is rejected with an explanatory error. Sway, Hyprland, Weston
-and river-classic cannot host this backend.
-
-An optional display-manager entry is installed as **XMonad Wayland (Experimental)**.
-Package installation does not select that session, stop your desktop or change
-your default display manager. Guix does not automatically discover this entry;
-its system/session integration must be configured separately.
-
-## Keys
+These are the **generic defaults**, with nine workspaces. The separately
+configured Guix laptop profile has 74 Sway-derived bindings and different
+commands; installing the generic package does not import that profile.
 
 | Shortcut | Action |
-|---|---|
-| Super+Return | Start terminal (default `foot`) |
-| Super+p | Launcher (default `fuzzel`) |
-| Super+j / k | Focus next / previous |
-| Super+Shift+j / k | Swap next / previous |
-| Super+Shift+Return | Swap focused window with master |
-| Super+Space | Tall → Mirror → Full |
-| Super+h / l | Shrink / grow master area |
-| Super+1…9 | View workspace |
-| Super+Shift+1…9 | Move focused window to workspace |
-| Super+Shift+c | Ask focused application to close |
-| Super+Shift+q | Stop this window manager; River remains running |
+| --- | --- |
+| Super+Return | Open Foot |
+| Super+p | Open Fuzzel |
+| Super+j / k | Focus next / previous window |
+| Super+Shift+j / k | Swap with next / previous window |
+| Super+Shift+Return | Swap with the master window |
+| Super+Space | Cycle Tall, Mirror and Full layouts |
+| Super+h / l | Shrink / grow the master area |
+| Super+1…9 | View a workspace |
+| Super+Shift+1…9 | Move the focused window and its transient children |
+| Super+period / comma | Focus next / previous monitor |
+| Super+t | Toggle floating |
+| Super+f | Toggle fullscreen |
+| Super+Shift+c | Ask the focused application to close |
+| Super+Shift+q | Stop the manager |
 
-Stopping the manager leaves applications alive but without its management/key
-bindings. In a nested test, restart the manager from another River terminal or
-close the nested compositor from the host session. **Stop is not a screen lock.**
+Stopping the manager is neither logout nor screen lock. River and applications
+remain running. Run `xmonad-wayland` in a terminal inside that River session to
+resume management.
 
-## Compatibility limits
+## Configuration and current limits
 
-- Existing `xmonad.hs`, XMonad's X11 monad and arbitrary `xmonad-contrib` modules
-  are not source-compatible. Only StackSet is directly reused.
-- No floating/dialog policy, panels or reserved layer-shell areas, manage hooks,
-  client fullscreen/maximize requests, status bar, clipboard UI, session-lock
-  launcher, layout persistence or hot reload in this release.
-- Keyboard bindings and borders currently live in the C bridge; Haskell config
-  covers commands and layout defaults. Recompile to change configuration.
-- Up to nine outputs have separate workspaces; excess outputs remain unassigned.
-- Independent multiseat policies are not implemented.
-- Protocol simulation does not prove DRM/GPU behavior, real application
-  integration, BSD execution, or native distribution installation.
+A custom Haskell entrypoint can select commands, keyboard modes, workspaces,
+cursor settings and layouts. An optional reloadable configuration preserves
+open windows while updating bindings. See [configuration](docs/CONFIGURATION.md).
+The generic executable does not automatically read `~/.xmonad/xmonad.hs` or the
+laptop profile's editable bindings.
 
-See [verification](docs/VERIFICATION.md), [platform status](docs/PLATFORMS.md),
-[security model](docs/SECURITY.md), and [upstream provenance](docs/PROVENANCE.md).
-The requested reusable execution prompt is [GOD-TIER-PROMPT.md](GOD-TIER-PROMPT.md).
+Available layouts include Tall, Mirror, Full, Columns, Rows, Tabbed and Stacking.
+The manager supports multiple outputs, transient dialogs, fullscreen and layer
+surfaces such as Fuzzel. Tabbed/Stacking do not draw tab headers, and layouts
+operate on whole workspaces rather than Sway's nested container tree.
 
-## Next acceptance gates
+A physical session has been running on the maintainer's laptop since September
+2026 (direct NVIDIA DRM output included). Suspend/resume, monitor hotplug,
+screen locking and long-term daily use are still being evaluated. Input
+configuration, notifications, portals, wallpaper and locking need separate
+session setup. Independent multiseat policy and layout persistence across
+manager restarts are not implemented.
 
-1. Run nested River with at least three real Wayland applications; test focus,
-   workspace movement, dialogs, resizing and compositor restart.
-2. Validate monitor hotplug and scaling on Linux graphics hardware and the
-   separate BSD input/session stacks.
-3. Add float/transient policy, client fullscreen requests and panel reservation.
-4. Build/install the native recipes in clean distro/Guix/BSD environments.
-5. Add a migration layer for selected XMonad configuration and contrib modules.
+## License and source
 
-BSD-3-Clause for new code and XMonad StackSet; MIT for vendored River protocol XML.
-This project is not affiliated with or endorsed by XMonad or River maintainers.
+The project uses the **BSD 3-Clause license**, the same license as XMonad.
+Vendored StackSet retains its upstream copyright and license. River protocol
+XML files retain their MIT license. See [LICENSE](LICENSE),
+[source provenance](docs/PROVENANCE.md) and [security boundaries](docs/SECURITY.md).

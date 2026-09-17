@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-3-Clause
+set -euo pipefail
+
+project=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+profile=true
+case ${1:-} in
+    --build-only) profile=false ;;
+    --help|-h)
+        printf 'Usage: %s [--build-only]\n' "$0"
+        printf 'Build the pinned manager and River, then create build/guix-runtime.\n'
+        printf 'Use --build-only to omit the terminal/launcher runtime profile.\n'
+        exit 0 ;;
+    '') ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+esac
+if (( $# > 1 )); then
+    printf 'Expected at most one option.\n' >&2
+    exit 2
+fi
+command -v guix >/dev/null || { printf 'guix is required.\n' >&2; exit 1; }
+cd -- "$project"
+mkdir -p build evidence
+log=$(mktemp "$project/evidence/guix-build.XXXXXXXX.log")
+printf 'Build log: %s\n' "$log"
+exec > >(tee -a "$log") 2>&1
+
+substitute_urls=${GUIX_SUBSTITUTE_URLS:-"https://ci.guix.gnu.org https://bordeaux.guix.gnu.org"}
+guix_pinned() {
+    guix time-machine --channels="$project/packaging/guix/channels.scm" \
+        --substitute-urls="$substitute_urls" -- "$@"
+}
+flags=(--cores="${GUIX_BUILD_CORES:-2}" --max-jobs=1 --verbosity=3 --keep-failed
+       --substitute-urls="$substitute_urls")
+
+build_with_root() {
+    local recipe=$1 root=$2 temporary derivation previous=''
+    if [[ -e $root && ! -L $root ]]; then
+        printf 'Refusing to replace non-symlink: %s\n' "$root" >&2
+        return 1
+    fi
+    derivation=$(guix_pinned build --file="$recipe" --derivations "${flags[@]}")
+    temporary=$(mktemp -d "$project/build/.guix-root.XXXXXXXX")
+    if ! guix_pinned build "$derivation" --root="$temporary/result" "${flags[@]}"; then
+        rmdir -- "$temporary"
+        return 1
+    fi
+    if [[ -L $root ]]; then
+        previous=$(readlink -- "$root")
+        rm -- "$root"
+    fi
+    # Keep the new output rooted while Guix registers the stable project path.
+    if ! guix_pinned build "$derivation" --root="$root" "${flags[@]}"; then
+        if [[ -n $previous && ! -e $root && ! -L $root ]]; then
+            ln -s -- "$previous" "$root"
+        fi
+        printf 'Built output remains rooted at %s/result\n' "$temporary" >&2
+        return 1
+    fi
+    rm -- "$temporary/result"
+    rmdir -- "$temporary"
+}
+
+guix_pinned describe
+build_with_root packaging/guix/river.scm "$project/build/guix-river"
+build_with_root packaging/guix/guix.scm "$project/build/guix-manager"
+if "$profile"; then
+    guix_pinned package --profile="$project/build/guix-runtime" \
+        --manifest=packaging/guix/manifest.scm "${flags[@]}"
+fi
+river_version=$(build/guix-river/bin/river -version)
+test "${river_version%% *}" = 0.4.8
+printf 'River: %s\n' "$river_version"
+build/guix-manager/bin/xmonad-wayland --version
+printf 'Guix build finished; project outputs are in %s/build.\n' "$project"
