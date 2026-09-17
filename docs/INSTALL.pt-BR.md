@@ -2,7 +2,7 @@
 
 [English](INSTALL.md) · [Visão geral do projeto](../README.pt-BR.md)
 
-A versão **0.2.0-dev** é destinada a desenvolvimento e testes. Comece dentro de
+A versão **0.3.0** é destinada a desenvolvimento e testes. Comece dentro de
 um desktop Wayland existente. No notebook do mantenedor, uma sessão física
 de login com o River está em uso desde setembro de 2026; os passos abaixo
 documentam a forma portátil e aninhada de experimentar o gerenciador em

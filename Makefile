@@ -15,12 +15,17 @@ PROTOCOLS = river-window-management-v1 river-xkb-bindings-v1 river-layer-shell-v
 HEADERS = $(addprefix build/,$(addsuffix -client-protocol.h,$(PROTOCOLS)))
 OBJECTS = build/bridge.o $(addprefix build/,$(addsuffix -protocol.o,$(PROTOCOLS)))
 HASKELL = $(shell find src app vendor -name '*.hs')
+XWM_GHC_PATH ?= $(shell command -v $(GHC))
+XWM_SRC_DIR ?= $(PREFIX)/share/xmonad-wayland/src
 
-.PHONY: all test test-policy test-protocol test-runtime test-session test-keymap test-sway-policy test-bindings-protocol test-source-archive test-pointer-policy test-pointer-protocol install uninstall clean check-deps FORCE
+.PHONY: all test test-policy test-protocol test-runtime test-session test-keymap test-sway-policy test-bindings-protocol test-source-archive test-pointer-policy test-pointer-protocol test-xconfig test-xconfig-sample install uninstall clean check-deps FORCE
 all: build/xmonad-wayland
 
 build:
 	mkdir -p build
+
+build/BuildInfo.hs: | build
+	@printf '%s\n' 'module BuildInfo where' 'ghcPath :: FilePath' 'ghcPath = "$(XWM_GHC_PATH)"' 'srcDir :: FilePath' 'srcDir = "$(XWM_SRC_DIR)"' > $@
 
 check-deps:
 	$(PKG_CONFIG) --atleast-version=1.20 wayland-client
@@ -39,8 +44,8 @@ build/%-protocol.o: build/%-protocol.c
 build/bridge.o: cbits/bridge.c cbits/bridge.h $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -std=c11 -Wall -Wextra -Werror -c $< -o $@
 
-build/xmonad-wayland: $(HASKELL) $(MAIN) $(OBJECTS) FORCE | build
-	$(GHC) $(GHCFLAGS) -isrc -ivendor -i$(dir $(MAIN)) -outputdir build/ghc $(MAIN) $(OBJECTS) $(LDLIBS) $(addprefix -optl,$(LDFLAGS)) -o $@
+build/xmonad-wayland: $(HASKELL) $(MAIN) $(OBJECTS) build/BuildInfo.hs FORCE | build
+	$(GHC) $(GHCFLAGS) -isrc -ivendor -ibuild -i$(dir $(MAIN)) -outputdir build/ghc $(MAIN) $(OBJECTS) $(LDLIBS) $(addprefix -optl,$(LDFLAGS)) -o $@
 
 build/policy-test: tests/PolicyTest.hs $(HASKELL) | build
 	$(GHC) -O1 -Wall -isrc -ivendor -outputdir build/test-ghc tests/PolicyTest.hs -o $@
@@ -96,7 +101,17 @@ test-pointer-policy: build/pointer-policy-test/pointer-policy-test
 test-pointer-protocol: build/xmonad-wayland
 	$(PYTHON) tests/pointer_protocol.py ./build/xmonad-wayland
 
-test: test-policy test-protocol test-runtime test-session test-keymap test-sway-policy test-bindings-protocol test-source-archive test-pointer-policy test-pointer-protocol
+build/xconfig-test/xconfig-test: tests/XConfigTest.hs $(HASKELL) $(OBJECTS) | build
+	mkdir -p build/xconfig-test
+	$(GHC) -O1 -Wall -isrc -ivendor -outputdir build/xconfig-test tests/XConfigTest.hs $(OBJECTS) $(LDLIBS) $(addprefix -optl,$(LDFLAGS)) -o $@
+
+test-xconfig: build/xconfig-test/xconfig-test
+	./build/xconfig-test/xconfig-test
+
+test-xconfig-sample:
+	$(GHC) -isrc -ivendor -fno-code tests/sample-xmonad.hs
+
+test: test-policy test-protocol test-runtime test-session test-keymap test-sway-policy test-bindings-protocol test-source-archive test-pointer-policy test-pointer-protocol test-xconfig test-xconfig-sample
 
 # Optional integration test; requires a separately installed compatible River.
 build/xdg-shell-client-protocol.h: | build

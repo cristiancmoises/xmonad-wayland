@@ -6,7 +6,7 @@ A Haskell window manager for **River 0.4+**, using XMonad's unmodified StackSet
 for window order, focus and workspaces. River handles graphics, input and
 Wayland/XWayland clients; this project supplies the window-management policy.
 
-**0.2.0-dev is a development release for GNU Guix.** Since September 2026 it
+**0.3.0 is a development release for GNU Guix.** Since September 2026 it
 runs in a real River login session on a Predator Helios laptop (NVIDIA RTX 4060
 plus Intel) through the SecurityOps channel, and in nested sessions for trying
 it out on any Wayland desktop. Daily-use acceptance — suspend/resume, monitor
@@ -73,11 +73,18 @@ resume management.
 
 ## Configuration and current limits
 
-A custom Haskell entrypoint can select commands, keyboard modes, workspaces,
-cursor settings and layouts. An optional reloadable configuration preserves
-open windows while updating bindings. See [configuration](docs/CONFIGURATION.md).
-The generic executable does not automatically read `~/.xmonad/xmonad.hs` or the
-laptop profile's editable bindings.
+X11 users migrating to Wayland keep their config idiom: write
+`~/.xmonad/xmonad.hs` with `import XMonad.Wayland.XConfig` and
+`main = xmonad $ def { ... }`, then run `xmonad-wayland --recompile`.
+The manager runs the compiled result automatically on start and restart,
+just like XMonad does. See [configuration](docs/CONFIGURATION.md) for the
+supported surface and the honest limits: no `xmonad-contrib`, no X11 hooks
+and no `manageHook` in this release.
+
+Advanced users can still compile a custom Haskell entrypoint with commands,
+keyboard modes, workspaces, cursor settings and layouts via
+`XMonad.Wayland.Config`, plus an optional reloadable binding file that
+preserves open windows while updating shortcuts.
 
 Available layouts include Tall, Mirror, Full, Columns, Rows, Tabbed and Stacking.
 The manager supports multiple outputs, transient dialogs, fullscreen and layer

@@ -14,6 +14,10 @@ import Foreign.C.String (CString, withCString)
 import System.Exit (ExitCode(..), exitWith)
 import System.IO (hClose, hGetContents, hPutStr, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
+import System.Directory (doesFileExist)
+import System.Environment (getArgs, lookupEnv)
+import System.Posix.Files (readSymbolicLink)
+import System.Posix.Process (executeFile)
 import System.Posix.Signals (sigKILL, sigTERM, signalProcessGroup)
 import System.Process (CreateProcess(..), ProcessHandle, StdStream(..), createProcess, getPid, getProcessExitCode, proc, waitForProcess)
 import Text.Read (readEither)
@@ -84,7 +88,9 @@ runWithReload cfg loader = do
   case existing of
     Just _ -> ioError (userError "xmonad-wayland runtime is already running")
     Nothing -> bracket_
-      (writeIORef runtimeRef (Just (Runtime cfg (initialPolicy cfg) [] Nothing loader confirmationGate worker)))
+      (writeIORef runtimeRef (Just (Runtime cfg (initialPolicy cfg)
+        (reverse (map Spawn (startupCommands cfg))) Nothing loader
+        confirmationGate worker)))
       (do
         readIORef worker >>= mapM_ killThread
         readMVar confirmationGate
@@ -175,6 +181,19 @@ manage rt = do
 execute :: Effect -> IO ()
 execute (CloseWindow wid) = c_close wid
 execute StopRuntime = c_stop
+execute RestartRuntime = restart `catch` restartFailure
+  where
+    restart = do
+      home <- lookupEnv "HOME"
+      let compiled = maybe "/nonexistent" (\directory ->
+            directory ++ "/.xmonad/xmonad-wayland-bin") home
+      exists <- doesFileExist compiled
+      self <- readSymbolicLink "/proc/self/exe"
+      let target = if exists then compiled else self
+      arguments <- getArgs
+      executeFile target True (target : arguments) Nothing
+    restartFailure :: IOException -> IO ()
+    restartFailure e = report ("restart failed: " ++ displayException e)
 execute (ConfirmSessionExit (Command executable arguments)) = mask_ $ do
   state <- readIORef runtimeRef
   case state of

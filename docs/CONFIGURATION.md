@@ -74,3 +74,45 @@ keyboard focus. Fullscreen windows use the physical output rectangle. The tests
 exercise protocol work areas and an actual Fuzzel surface; no complete panel or
 portal desktop is bundled. Notifications, wallpaper, input configuration, session
 locking and portals require separate programs and session configuration.
+
+# Migrating an xmonad.hs from X11
+
+X11 users keep their config idiom on Wayland. Write `~/.xmonad/xmonad.hs`:
+
+```haskell
+import XMonad.Wayland.XConfig
+
+main :: IO ()
+main = xmonad $ def
+  { modMask    = mod4Mask
+  , terminal   = "kitty"
+  , workspaces = ["1" .. "9"]
+  , layoutHook = tall ||| mirror ||| full
+  , keys       = [ ((mod4Mask, xK_Return), spawn "kitty")
+                 , ((mod4Mask, xK_j), focusNext)
+                 , ((mod4Mask, xK_k), focusPrevious)
+                 ]
+  , startupHook = [startup "swaybg -i ~/wallpaper.png"]
+  }
+```
+
+Then run `xmonad-wayland --recompile`. The manager executes
+`~/.xmonad/xmonad-wayland-bin` automatically at startup, and the `restart`
+action re-executes it, exactly like XMonad's recompile flow. The command
+uses the GHC and the installed sources recorded in the package; no shell
+profile or `ghc` in PATH is needed.
+
+Supported: `xmonad`, `def`, `XConfig`, `modMask`, `terminal`, `workspaces`
+(numeric tags), `layoutHook` with `tall`, `mirror`, `full`, `columns`, `rows`,
+`tabbed`, `stacking` and `(|||)`, `keys` as a list of `(mask, keysym)` chords,
+the action helpers (`spawn`, `focusNext`, `focusPrevious`, `swapNext`,
+`swapPrevious`, `swapMaster`, `nextLayout`, `shrink`, `expand`, `close`,
+`toggleFloat`, `toggleFullscreen`, `nextOutput`, `previousOutput`, `viewWS`,
+`shiftWS`, `restart`, `reload`, `stop`), the mask constants and the common
+`xK_*` keysym names. `spawn` runs through `/bin/sh -c`, like XMonad.
+
+Not supported in this release, and reported with a clear error instead of a
+silent fallback: `xmonad-contrib` modules, X11 hooks, the `X ()` monad,
+`manageHook`, non-numeric workspace tags and layouts with per-layout ratio
+arguments. Cursor theme and size remain available in the advanced `Config`
+API below.
