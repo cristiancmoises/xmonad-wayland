@@ -33,7 +33,7 @@ session exit requires an explicit successful confirmation and protocol version
 XWayland applications inherit XWayland's security boundaries; this package does
 not promise isolation between X11 clients. A native Wayland port alone does not
 constitute an audited secure desktop. No security audit or production-readiness
-claim is made for version 0.2.0-dev.
+claim is made for version 0.3.0.
 
 No package script changes existing XMonad files, display-manager selection,
 user river/init, device permissions, kernel settings or firewall configuration.

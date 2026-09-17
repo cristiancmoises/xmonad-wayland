@@ -85,3 +85,47 @@ Notificações, papel de parede, configuração de entrada, bloqueio e portais
 dependem de outros programas e da configuração da sessão. O pacote não inicia
 um desktop completo. Consulte os [limites de segurança](SECURITY.pt-BR.md)
 antes de substituir sua sessão atual.
+
+# Migrando um xmonad.hs do X11
+
+Quem vem do X11 mantém o idioma da configuração no Wayland. Escreva
+`~/.xmonad/xmonad.hs`:
+
+```haskell
+import XMonad.Wayland.XConfig
+
+main :: IO ()
+main = xmonad $ def
+  { modMask    = mod4Mask
+  , terminal   = "kitty"
+  , workspaces = ["1" .. "9"]
+  , layoutHook = tall ||| mirror ||| full
+  , keys       = [ ((mod4Mask, xK_Return), spawn "kitty")
+                 , ((mod4Mask, xK_j), focusNext)
+                 , ((mod4Mask, xK_k), focusPrevious)
+                 ]
+  , startupHook = [startup "swaybg -i ~/wallpaper.png"]
+  }
+```
+
+Depois rode `xmonad-wayland --recompile`. O gerenciador executa
+`~/.xmonad/xmonad-wayland-bin` automaticamente ao iniciar, e a ação
+`restart` o reexecuta, exatamente como o fluxo de recompilação do XMonad.
+O comando usa o GHC e as fontes instaladas registrados no pacote; não é
+preciso `ghc` no PATH nem perfil de shell.
+
+Suportado: `xmonad`, `def`, `XConfig`, `modMask`, `terminal`, `workspaces`
+(etiquetas numéricas), `layoutHook` com `tall`, `mirror`, `full`, `columns`,
+`rows`, `tabbed`, `stacking` e `(|||)`, `keys` como lista de acordes
+`(máscara, keysym)`, os helpers de ação (`spawn`, `focusNext`,
+`focusPrevious`, `swapNext`, `swapPrevious`, `swapMaster`, `nextLayout`,
+`shrink`, `expand`, `close`, `toggleFloat`, `toggleFullscreen`,
+`nextOutput`, `previousOutput`, `viewWS`, `shiftWS`, `restart`, `reload`,
+`stop`), as constantes de máscara e os nomes `xK_*` comuns. `spawn` roda via
+`/bin/sh -c`, como no XMonad.
+
+Não suportado nesta versão, e reportado com erro claro em vez de fallback
+silencioso: módulos do `xmonad-contrib`, hooks de X11, a mônada `X ()`,
+`manageHook`, etiquetas de área de trabalho não numéricas e layouts com
+argumentos de proporção individuais. Tema e tamanho do cursor continuam
+disponíveis na API avançada de `Config` abaixo.

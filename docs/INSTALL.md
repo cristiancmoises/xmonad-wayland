@@ -2,7 +2,7 @@
 
 [Português do Brasil](INSTALL.pt-BR.md) · [Project overview](../README.md)
 
-Version **0.2.0-dev** is for development and testing. Start inside an existing
+Version **0.3.0** is for development and testing. Start inside an existing
 Wayland desktop. On the maintainer's laptop a physical River login session has
 been running since September 2026; the steps below document the portable,
 nested way of trying the manager anywhere.

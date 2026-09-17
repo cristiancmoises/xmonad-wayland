@@ -153,16 +153,19 @@ handleOrdinaryEvent cfg ev p = case ev of
         Reload -> (p, [ReloadConfig])
         ConfirmExit command -> (p, [ConfirmSessionExit command])
         ToggleFullscreen -> modifyFocused (\m -> m { windowFullscreen = not (windowFullscreen m) })
-        NextLayout -> changeLayout $ \l -> l { layoutKind = case layoutKind l of
-          Tall -> Mirror
-          Mirror -> Full
-          _ -> Tall }
+        NextLayout -> changeLayout $ \l ->
+          let choices = layoutCycle cfg
+              remaining = dropWhile (/= layoutKind l) (choices ++ choices)
+          in l { layoutKind = case remaining of
+                 (_:kind:_) -> kind
+                 _ -> layoutKind l }
         Shrink -> resize negate
         Expand -> resize id
         Close -> (p, maybe [] (pure . CloseWindow) (focusedWindow p))
         Terminal -> (p, [Spawn (terminalCommand cfg)])
         Launcher -> (p, [Spawn (launcherCommand cfg)])
         Stop -> (p, [StopRuntime])
+        Restart -> (p, [RestartRuntime])
   where
     ws = windowSet p
     done p' = (p', [])

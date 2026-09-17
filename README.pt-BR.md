@@ -7,7 +7,7 @@ do XMonad para organizar janelas, foco e áreas de trabalho. O River cuida dos
 gráficos, da entrada e dos clientes Wayland/XWayland; este projeto define como
 as janelas são gerenciadas.
 
-**A versão 0.2.0-dev está em desenvolvimento para GNU Guix.** Desde setembro de
+**A versão 0.3.0 está em desenvolvimento para GNU Guix.** Desde setembro de
 2026 ela roda em uma sessão real de login com o River em um notebook Predator
 Helios (NVIDIA RTX 4060 mais Intel) pelo canal SecurityOps, e em sessões
 aninhadas para experimentar em qualquer desktop Wayland. A aceitação de uso
@@ -75,12 +75,18 @@ em um terminal dentro daquela sessão do River.
 
 ## Configuração e limites atuais
 
-Um ponto de entrada Haskell personalizado pode definir comandos, modos de teclado,
-áreas de trabalho, cursor e layouts. Uma configuração recarregável opcional
-permite atualizar os atalhos preservando as janelas abertas. Consulte a
-[documentação de configuração](docs/CONFIGURATION.pt-BR.md). O executável
-genérico não lê automaticamente `~/.xmonad/xmonad.hs` nem o arquivo de atalhos
-do perfil do notebook.
+Quem migra do X11 mantém o idioma da configuração: escreva
+`~/.xmonad/xmonad.hs` com `import XMonad.Wayland.XConfig` e
+`main = xmonad $ def { ... }`, e rode `xmonad-wayland --recompile`.
+O gerenciador executa o resultado compilado automaticamente ao iniciar e ao
+reiniciar, como o XMonad faz. Consulte a [documentação de configuração](docs/CONFIGURATION.pt-BR.md)
+para a superfície suportada e os limites honestos: sem `xmonad-contrib`, sem
+hooks de X11 e sem `manageHook` nesta versão.
+
+Usuários avançados podem continuar compilando um ponto de entrada Haskell
+próprio com comandos, modos de teclado, áreas de trabalho, cursor e layouts
+via `XMonad.Wayland.Config`, além de um arquivo de atalhos recarregável que
+preserva as janelas abertas ao atualizar os atalhos.
 
 Os layouts disponíveis são Tall, Mirror, Full, Columns, Rows, Tabbed e Stacking.
 Há suporte a vários monitores, diálogos transitórios, tela cheia e superfícies

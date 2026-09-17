@@ -9,10 +9,12 @@ defaultConfig = Config
   { terminalCommand = Command "foot" []
   , launcherCommand = Command "fuzzel" []
   , initialLayout = Tall
+  , layoutCycle = [Tall, Mirror, Full]
   , initialMasterRatio = 1 / 2
   , resizeIncrement = 3 / 100
   , workspaceIds = [1..9]
   , keyBindings = defaultKeyBindings
+  , startupCommands = []
   , cursorTheme = Nothing
   , cursorSize = 24
   }

@@ -33,10 +33,12 @@ data Config = Config
   { terminalCommand :: !Command
   , launcherCommand :: !Command
   , initialLayout :: !Layout
+  , layoutCycle :: ![Layout]
   , initialMasterRatio :: !Rational
   , resizeIncrement :: !Rational
   , workspaceIds :: ![WorkspaceId]
   , keyBindings :: ![KeyBinding]
+  , startupCommands :: ![Command]
   , cursorTheme :: !(Maybe String)
   , cursorSize :: !Word32
   } deriving (Eq, Read, Show)
@@ -49,6 +51,7 @@ data Action
   | FocusDirection Direction | MoveDirection Direction | Sink | FocusModeToggle
   | SetLayout Layout | ToggleSplit | CycleSwayLayout | Resize Axis Int
   | EnterMode BindingMode | RunCommand Command | Reload | ConfirmExit Command
+  | Restart
   deriving (Eq, Read, Show)
 
 data Event
@@ -65,7 +68,7 @@ data Event
   deriving (Eq, Show)
 
 data Effect = CloseWindow WindowId | Spawn Command | StopRuntime | ReloadConfig
-  | ConfirmSessionExit Command
+  | ConfirmSessionExit Command | RestartRuntime
   deriving (Eq, Show)
 
 data Placement = Placement

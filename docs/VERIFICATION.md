@@ -1,6 +1,6 @@
 # Verification
 
-Version 0.2.0-dev is being developed on GNU Guix. This record distinguishes
+Version 0.3.0 is being developed on GNU Guix. This record distinguishes
 completed checks from the checks needed before replacing a daily desktop.
 Commands produce fresh results; the presence of a recipe or test is not a pass.
 

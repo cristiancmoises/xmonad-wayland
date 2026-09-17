@@ -77,6 +77,8 @@ validateConfig :: Config -> Either String ()
 validateConfig cfg
   | null tags || any (<= 0) tags || nub tags /= tags =
       Left "workspaceIds must be nonempty, unique and positive"
+  | null choices || nub choices /= choices =
+      Left "layoutCycle must be nonempty and contain no duplicates"
   | initialMasterRatio cfg <= 0 || initialMasterRatio cfg >= 1 =
       Left "initialMasterRatio must lie between zero and one"
   | resizeIncrement cfg < 0 = Left "resizeIncrement must not be negative"
@@ -86,6 +88,7 @@ validateConfig cfg
       mapM_ validAction (map bindingAction (keyBindings cfg))
   where
     tags = workspaceIds cfg
+    choices = layoutCycle cfg
     validAction (View tag) = knownWorkspace tag
     validAction (Shift tag) = knownWorkspace tag
     validAction _ = Right ()
