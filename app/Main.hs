@@ -1,8 +1,8 @@
 module Main (main) where
 
-import BuildInfo (ghcPath, srcDir)
+import BuildInfo (bridgeLibs, bridgeObjects, ghcPath, srcDir)
 import Control.Monad (unless)
-import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesFileExist, findExecutable)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (die)
 import System.Posix.Process (executeFile)
@@ -45,8 +45,9 @@ runCompiledOrDefault = do
     else run defaultConfig
 
 -- | Compile ~/.xmonad/xmonad.hs against the installed sources and write the
--- result to ~/.xmonad/xmonad-wayland-bin.  The GHC executable and the source
--- directory are recorded at build time; set XMONAD_WAYLAND_SRC to override.
+-- result to ~/.xmonad/xmonad-wayland-bin.  GHC is taken from $GHC, then from
+-- PATH, then from the executable recorded in the package; some store GHCs
+-- panic outside their build environment, so a profile GHC wins when present.
 recompile :: IO ()
 recompile = do
   home <- lookupEnv "HOME"
@@ -56,8 +57,17 @@ recompile = do
   exists <- doesFileExist input
   unless exists (die ("configuration not found: " ++ input))
   createDirectoryIfMissing True directory
-  callProcess ghcPath
+  compiler <- findCompiler
+  callProcess compiler $
     [ "--make", input, "-i" ++ srcDir, "-threaded", "-rtsopts"
     , "-outputdir", directory ++ "/xmonad-wayland-build"
-    , "-o", output ]
+    , "-o", output ] ++ bridgeObjects ++ bridgeLibs
   putStrLn ("configuration compiled: " ++ output)
+
+findCompiler :: IO FilePath
+findCompiler = do
+  explicit <- lookupEnv "GHC"
+  pathOne <- findExecutable "ghc"
+  pure $ case explicit of
+    Just compiler -> compiler
+    Nothing -> maybe ghcPath id pathOne
