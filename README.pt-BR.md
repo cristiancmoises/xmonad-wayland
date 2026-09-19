@@ -7,7 +7,7 @@ do XMonad para organizar janelas, foco e áreas de trabalho. O River cuida dos
 gráficos, da entrada e dos clientes Wayland/XWayland; este projeto define como
 as janelas são gerenciadas.
 
-**A versão 0.3.0 está em desenvolvimento para GNU Guix.** Desde setembro de
+**A versão 0.4.0 está em desenvolvimento para GNU Guix.** Desde setembro de
 2026 ela roda em uma sessão real de login com o River em um notebook Predator
 Helios (NVIDIA RTX 4060 mais Intel) pelo canal SecurityOps, e em sessões
 aninhadas para experimentar em qualquer desktop Wayland. A aceitação de uso

@@ -177,6 +177,14 @@ boundedCoordinate value = fromIntegral (max (fromIntegral (minBound :: CInt))
 manage :: Runtime -> IO ()
 manage rt = do
   writeIORef runtimeRef (Just rt { pendingEffects = [] })
+  applyPolicy rt
+  mapM_ execute (reverse (pendingEffects rt))
+
+-- Push the policy's current placements and focus to the compositor. Called
+-- both at the end of every manage cycle and after the picker swap, so the
+-- swap takes effect without waiting for the next event.
+applyPolicy :: Runtime -> IO ()
+applyPolicy rt = do
   c_setBindingMode (fromIntegral (fromEnum (activeMode (runtimePolicy rt))))
   case pointerOperation (runtimePolicy rt) of
     Nothing -> c_setPointerOperation 0 0 0
@@ -190,7 +198,6 @@ manage rt = do
     c_setWindow (placementWindow placement) (boolean (placementVisible placement))
       (bounded x) (bounded y) (bounded w) (bounded h) (boolean (placementFocused placement))
   c_focus (maybe 0 id (focusedWindow (runtimePolicy rt)))
-  mapM_ execute (reverse (pendingEffects rt))
   where
     boolean value = if value then 1 else 0
     bounded value = fromIntegral (max (fromIntegral (minBound :: CInt))
@@ -232,9 +239,11 @@ execute (PickWindow (Command executable arguments) options) = pick `catch` pickF
       state <- readIORef runtimeRef
       case state of
         Just rt | callbackFailure rt == Nothing -> do
-          let (p, _) = handleEvent (runtimeConfig rt)
-                (ActionRequested (FocusWindow wid)) (runtimePolicy rt)
+          let (p, effects) = handleEvent (runtimeConfig rt)
+                (ActionRequested (SwapToWindow wid)) (runtimePolicy rt)
           writeIORef runtimeRef (Just rt { runtimePolicy = p })
+          applyPolicy rt { runtimePolicy = p }
+          mapM_ execute effects
         _ -> pure ()
     pickFailure :: IOException -> IO ()
     pickFailure e = report ("window picker failed: " ++ displayException e)
