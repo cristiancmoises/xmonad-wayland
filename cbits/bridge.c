@@ -1191,7 +1191,10 @@ void xw_set_window(uint32_t id, int visible, int x, int y,
         return;
     w->visible = visible != 0;
     w->focused = focused != 0 && !layer_has_focus();
-    w->border = !w->fullscreen_output && width > 4 && height > 4 ? 2 : 0;
+    /* Windows are drawn without a frame: the maintainer's session shows no
+     * border line around tiles.  Keep the inset arithmetic so geometry stays
+     * correct if a configurable border returns later. */
+    w->border = 0;
     /* Do arithmetic in 64 bits so even an extreme logical output position
      * cannot cause signed C overflow. Clamp unrepresentable content positions.
      */
