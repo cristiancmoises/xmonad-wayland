@@ -374,7 +374,7 @@ movePointer sid dx dy p = case pointerOperation p of
         initial = pointerInitialRect operation
         area = pointerArea operation
         edges = pointerEdges operation
-        border = if rectWidth area > 4 && rectHeight area > 4 then 4 else 0
+        border = 0 -- windows are drawn without a frame
         (minW,minH,maxW,maxH) = pointerHints operation
         (x,width) = axis edges 4 8 (rectX initial) (rectWidth initial)
           (rectX area) (rectWidth area) dx minW maxW border
@@ -686,7 +686,7 @@ floatingRect (Rect x y w h) (minW, minH, maxW, maxH) =
     extent available lower upper = fromInteger $ max 1 $ min (toInteger available) $
       max (toInteger lower + border) (min preferred ceilingSize)
       where
-        border = if w > 4 && h > 4 then 4 else 0
+        border = 0 -- windows are drawn without a frame
         preferred = toInteger available `div` 2
         ceilingSize = if upper > 0 then toInteger upper + border else toInteger available
     width = extent w minW maxW
@@ -699,7 +699,7 @@ floatRect area@(Rect ax ay aw ah) metadata = case windowFloatRect metadata of
     (max ay (min (ay + ah - height) y)) width height
     where
       (minW, minH, maxW, maxH) = windowHints metadata
-      border = if aw > 4 && ah > 4 then 4 else 0
+      border = 0 -- windows are drawn without a frame
       bounded available lower upper requested = max 1 (min available
         (max (lower + border) (min requested (if upper > 0 then upper + border else available))))
       width = bounded aw minW maxW w
