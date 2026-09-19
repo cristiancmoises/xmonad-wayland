@@ -1,7 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
 -- | The C bridge owns Wayland handles; this module owns policy and subprocesses.
-module XMonad.Wayland.Runtime (run, runWithReload, readConfig, xw_event, xw_configure_bindings) where
+module XMonad.Wayland.Runtime (run, runWithReload, readConfig, xw_event, xw_configure_bindings, xw_window_string) where
 
 import Control.Concurrent (MVar, ThreadId, forkIOWithUnmask, killThread, newMVar, putMVar, readMVar, threadDelay, tryTakeMVar)
 import Control.Exception (IOException, SomeException, bracket, bracket_, catch, displayException, evaluate, finally, mask_, uninterruptibleMask_)
@@ -10,7 +10,7 @@ import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Int (Int32)
 import Data.Word (Word32)
 import Foreign.C.Types (CInt(..))
-import Foreign.C.String (CString, withCString)
+import Foreign.C.String (CString, peekCString, withCString)
 import System.Exit (ExitCode(..), exitWith)
 import System.IO (hClose, hGetContents, hPutStr, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -19,7 +19,7 @@ import System.Environment (getArgs, lookupEnv)
 import System.Posix.Files (readSymbolicLink)
 import System.Posix.Process (executeFile)
 import System.Posix.Signals (sigKILL, sigTERM, signalProcessGroup)
-import System.Process (CreateProcess(..), ProcessHandle, StdStream(..), createProcess, getPid, getProcessExitCode, proc, waitForProcess)
+import System.Process (CreateProcess(..), ProcessHandle, StdStream(..), createProcess, getPid, getProcessExitCode, proc, readProcessWithExitCode, waitForProcess)
 import Text.Read (readEither)
 import XMonad.Wayland.Keymap (bindingAt, validateConfig)
 import XMonad.Wayland.Policy
@@ -50,6 +50,7 @@ foreign import ccall unsafe "xw_set_cursor_theme" c_setCursorTheme :: CString ->
 foreign import ccall unsafe "xw_request_exit_session" c_requestExitSession :: IO ()
 foreign export ccall xw_event :: Int32 -> Word32 -> Int32 -> Int32 -> Int32 -> Int32 -> IO ()
 foreign export ccall xw_configure_bindings :: IO ()
+foreign export ccall xw_window_string :: Int32 -> Word32 -> CString -> IO ()
 
 data Runtime = Runtime
   { runtimeConfig :: !Config
@@ -139,6 +140,23 @@ xw_configure_bindings = configure `catch` containFailure
               (fromIntegral (fromEnum (bindingMode binding)))
         _ -> pure ()
 
+-- | Window metadata from the C bridge; the strings are bounded and
+-- sanitized again on the Haskell side before they reach policy state.
+xw_window_string :: Int32 -> Word32 -> CString -> IO ()
+xw_window_string kind ident text = dispatch `catch` containFailure
+  where
+    dispatch = do
+      state <- readIORef runtimeRef
+      case state of
+        Just rt | callbackFailure rt == Nothing -> do
+          bytes <- peekCString text
+          let event = if kind == 26 then WindowAppId ident bytes
+                      else WindowTitle ident bytes
+              (p, effects) = handleEvent (runtimeConfig rt) event (runtimePolicy rt)
+          writeIORef runtimeRef (Just rt
+            { runtimePolicy = p, pendingEffects = reverse effects ++ pendingEffects rt })
+        _ -> pure ()
+
 containFailure :: SomeException -> IO ()
 containFailure exception = do
   let message = displayException exception
@@ -194,6 +212,32 @@ execute RestartRuntime = restart `catch` restartFailure
       executeFile target True (target : arguments) Nothing
     restartFailure :: IOException -> IO ()
     restartFailure e = report ("restart failed: " ++ displayException e)
+execute (PickWindow (Command executable arguments) options) = pick `catch` pickFailure
+  where
+    pick = do
+      (_, output, _) <- readProcessWithExitCode executable arguments
+        (unlines (map fst options))
+      case words output of
+        (chosen:_) ->
+          case [ wid | (line, wid) <- options
+                     , firstCharacter line /= Nothing
+                     , firstCharacter line == firstCharacter chosen ] of
+            [wid] -> focus wid
+            _ -> pure ()
+        _ -> pure ()
+    firstCharacter value = case value of
+      (c:_) -> Just c
+      [] -> Nothing
+    focus wid = do
+      state <- readIORef runtimeRef
+      case state of
+        Just rt | callbackFailure rt == Nothing -> do
+          let (p, _) = handleEvent (runtimeConfig rt)
+                (ActionRequested (FocusWindow wid)) (runtimePolicy rt)
+          writeIORef runtimeRef (Just rt { runtimePolicy = p })
+        _ -> pure ()
+    pickFailure :: IOException -> IO ()
+    pickFailure e = report ("window picker failed: " ++ displayException e)
 execute (ConfirmSessionExit (Command executable arguments)) = mask_ $ do
   state <- readIORef runtimeRef
   case state of

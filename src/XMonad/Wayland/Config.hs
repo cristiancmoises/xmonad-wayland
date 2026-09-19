@@ -8,6 +8,7 @@ defaultConfig :: Config
 defaultConfig = Config
   { terminalCommand = Command "foot" []
   , launcherCommand = Command "fuzzel" []
+  , pickerCommand = Command "fuzzel" ["-d"]
   , initialLayout = Tall
   , layoutCycle = [Tall, Mirror, Full]
   , initialMasterRatio = 1 / 2

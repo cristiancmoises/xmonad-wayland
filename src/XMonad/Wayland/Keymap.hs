@@ -73,6 +73,9 @@ validateKeyBindings = go Set.empty
       | otherwise = go (Set.insert chord seen) rest
       where chord = (bindingMode binding, bindingKeysym binding, bindingModifiers binding)
 
+commandExecutable :: Command -> String
+commandExecutable (Command executable _) = executable
+
 validateConfig :: Config -> Either String ()
 validateConfig cfg
   | null tags || any (<= 0) tags || nub tags /= tags =
@@ -83,6 +86,8 @@ validateConfig cfg
       Left "initialMasterRatio must lie between zero and one"
   | resizeIncrement cfg < 0 = Left "resizeIncrement must not be negative"
   | cursorSize cfg == 0 = Left "cursorSize must be positive"
+  | commandExecutable (pickerCommand cfg) == "" =
+      Left "pickerCommand must name an executable"
   | otherwise = do
       validateKeyBindings (keyBindings cfg)
       mapM_ validAction (map bindingAction (keyBindings cfg))

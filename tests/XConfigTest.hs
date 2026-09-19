@@ -40,8 +40,10 @@ main = do
       Left _ -> False
       Right cfg -> keyBindings cfg ==
         [KeyBinding xK_Return mod4Mask NormalMode (spawn "kitty")]
-  check "restart, reload and stop actions exist" $
-    restart == Restart && reload == Reload && stop == Stop
+  check "restart, reload, stop and pick actions exist" $
+    restart == Restart && reload == Reload && stop == Stop && pickWindow == Pick
+  check "mod+v picks a window in the default keys" $
+    ((mod4Mask, xK_v), Pick) `elem` keys def
   check "def passes validation including chord uniqueness" $
     either (const False) (const True) (toConfig def >>= validateConfig)
   check "non-numeric workspace tags are rejected" $

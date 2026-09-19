@@ -231,5 +231,25 @@ main = do
   assert "keyboard fullscreen toggle restores the previous layout"
     (shown (fromBinding 18 base) == [30]
       && renderPolicy (fromBinding 18 (fromBinding 18 base)) == renderPolicy base)
+  assert "app id and title are stored for picker labels" $
+    let meta = Map.lookup 10 (windowMetadata (events [WindowAdded 10, WindowAppId 10 "chromium", WindowTitle 10 "Downloads"]))
+    in fmap windowAppId meta == Just (Just "chromium")
+      && fmap windowTitle meta == Just (Just "Downloads")
+  assert "window metadata strings are bounded and sanitized" $
+    let long = replicate 300 'x'
+        meta = Map.lookup 10 (windowMetadata (events [WindowAdded 10, WindowTitle 10 (long ++ "\0\n\x7f")]))
+    in fmap windowTitle meta == Just (Just (take 255 (filter (/= '\n') (filter (/= '\x7f') (filter (/= '\0') long)))))
+  assert "pick action labels current-workspace windows with letters" $
+    let (p, effects) = handleEvent defaultConfig (ActionRequested Pick) base
+    in case effects of
+         [PickWindow (Command "fuzzel" ["-d"]) options] ->
+           map snd options == S.index (windowSet base)
+             && map fst options == ["a 30", "b 20", "c 10"]
+         _ -> False
+  assert "focus by window id views the right workspace" $
+    let away = events [OutputUpsert 7 (Rect 0 0 800 600), WindowAdded 10
+                      , ActionRequested (View 2), WindowAdded 20]
+        focused = step (ActionRequested (FocusWindow 10)) away
+    in focusedWindow focused == Just 10 && S.currentTag (windowSet focused) == 1
   stressPolicies
   putStrLn "All policy tests passed (including 15,000 mixed lifecycle events)."

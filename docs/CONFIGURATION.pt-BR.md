@@ -118,7 +118,7 @@ liga a ponte C incluída.
 Suportado: `xmonad`, `def`, `XConfig`, `modMask`, `terminal`, `workspaces`
 (etiquetas numéricas), `layoutHook` com `tall`, `mirror`, `full`, `columns`,
 `rows`, `tabbed`, `stacking` e `(|||)`, `keys` como lista de acordes
-`(máscara, keysym)`, os helpers de ação (`spawn`, `focusNext`,
+`(máscara, keysym)`, os helpers de ação (`spawn`, `pickWindow`,,
 `focusPrevious`, `swapNext`, `swapPrevious`, `swapMaster`, `nextLayout`,
 `shrink`, `expand`, `close`, `toggleFloat`, `toggleFullscreen`,
 `nextOutput`, `previousOutput`, `viewWS`, `shiftWS`, `restart`, `reload`,

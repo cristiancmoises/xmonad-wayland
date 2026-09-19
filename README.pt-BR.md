@@ -82,6 +82,11 @@ reiniciar, como o XMonad faz. Consulte a [documentação de configuração](docs
 para a superfície suportada e os limites honestos: sem `xmonad-contrib`, sem
 hooks de X11 e sem `manageHook` nesta versão.
 
+O mod+v rotula cada janela da área de trabalho atual com uma letra e foca a
+escolhida, como o WindowBringer do XMonad (o overlay com letras grandes sobre
+as próprias janelas está planejado; hoje um seletor estilo dmenu lista as
+mesmas letras com o título ou o app id de cada janela).
+
 Usuários avançados podem continuar compilando um ponto de entrada Haskell
 próprio com comandos, modos de teclado, áreas de trabalho, cursor e layouts
 via `XMonad.Wayland.Config`, além de um arquivo de atalhos recarregável que

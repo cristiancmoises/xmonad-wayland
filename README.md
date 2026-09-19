@@ -81,6 +81,11 @@ just like XMonad does. See [configuration](docs/CONFIGURATION.md) for the
 supported surface and the honest limits: no `xmonad-contrib`, no X11 hooks
 and no `manageHook` in this release.
 
+Pressing mod+v labels every window of the current workspace with a letter
+and focuses the chosen one, like XMonad's WindowBringer (the overlay with
+big letters on the windows themselves is planned; today a dmenu-style
+chooser lists the same letters with each window's title or app id).
+
 Advanced users can still compile a custom Haskell entrypoint with commands,
 keyboard modes, workspaces, cursor settings and layouts via
 `XMonad.Wayland.Config`, plus an optional reloadable binding file that

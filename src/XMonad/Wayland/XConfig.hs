@@ -31,7 +31,7 @@ module XMonad.Wayland.XConfig
   , xK_F1, xK_F2, xK_F3, xK_F4, xK_F5, xK_F6, xK_F7, xK_F8, xK_F9, xK_F10
   , xK_F11, xK_F12
   , tall, mirror, full, columns, rows, tabbed, stacking, (|||)
-  , spawn, startup, focusNext, focusPrevious, swapNext, swapPrevious
+  , spawn, startup, pickWindow, focusNext, focusPrevious, swapNext, swapPrevious
   , swapMaster, nextLayout, shrink, expand, close, toggleFloat
   , toggleFullscreen, nextOutput, previousOutput, viewWS, shiftWS, restart
   , reload, stop
@@ -188,9 +188,10 @@ spawn command = RunCommand (Command "/bin/sh" ["-c", command])
 startup :: String -> Command
 startup command = Command "/bin/sh" ["-c", command]
 
-focusNext, focusPrevious, swapNext, swapPrevious, swapMaster, nextLayout, shrink
-  , expand, close, toggleFloat, toggleFullscreen, nextOutput, previousOutput
+pickWindow, focusNext, focusPrevious, swapNext, swapPrevious, swapMaster, nextLayout
+  , shrink, expand, close, toggleFloat, toggleFullscreen, nextOutput, previousOutput
   , restart, reload, stop :: Action
+pickWindow = Pick
 focusNext = FocusNext
 focusPrevious = FocusPrevious
 swapNext = SwapNext
@@ -281,6 +282,7 @@ defaultCompatKeys =
   , ((mod4Mask, xK_comma), previousOutput)
   , ((mod4Mask, xK_t), toggleFloat)
   , ((mod4Mask, xK_f), toggleFullscreen)
+  , ((mod4Mask, xK_v), pickWindow)
   ] ++ concat
   [ [((mod4Mask, digit), viewWS tag), ((shiftMask + mod4Mask, digit), shiftWS tag)]
   | (digit, tag) <- zip [xK_1 .. xK_9] (map show [1..9]) ]

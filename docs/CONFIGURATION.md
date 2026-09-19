@@ -106,7 +106,7 @@ links the bundled C bridge.
 Supported: `xmonad`, `def`, `XConfig`, `modMask`, `terminal`, `workspaces`
 (numeric tags), `layoutHook` with `tall`, `mirror`, `full`, `columns`, `rows`,
 `tabbed`, `stacking` and `(|||)`, `keys` as a list of `(mask, keysym)` chords,
-the action helpers (`spawn`, `focusNext`, `focusPrevious`, `swapNext`,
+the action helpers (`spawn`, `pickWindow`,, `focusPrevious`, `swapNext`,
 `swapPrevious`, `swapMaster`, `nextLayout`, `shrink`, `expand`, `close`,
 `toggleFloat`, `toggleFullscreen`, `nextOutput`, `previousOutput`, `viewWS`,
 `shiftWS`, `restart`, `reload`, `stop`), the mask constants and the common
