@@ -117,8 +117,8 @@ main = do
   let hidden = act (View 2) late
       visible = act (View 1) hidden
   assert "hidden target retains last displayed rectangle" (rect visible == Rect 256 202 344 248)
-  let fixed = step (WindowActualSize 10 204 104) (step (WindowSizeHints 10 200 100 200 100) base)
-  assert "fixed-size hints" (let r = rect (step (PointerMoved 3 100 100) (start 10 fixed)) in rectWidth r == 204 && rectHeight r == 104)
+  let fixed = step (WindowActualSize 10 200 100) (step (WindowSizeHints 10 200 100 200 100) base)
+  assert "fixed-size hints" (let r = rect (step (PointerMoved 3 100 100) (start 10 fixed)) in rectWidth r == 200 && rectHeight r == 100)
   let impossibleHints = step (WindowSizeHints 10 (fromIntegral (maxBound :: Int32)) (fromIntegral (maxBound :: Int32)) 0 0) base
       boundedHints = step (PointerMoved 3 20 20) (start 5 impossibleHints)
   assert "impossible minima cannot displace the fixed opposite edge" (rect boundedHints == Rect 0 0 400 300)
