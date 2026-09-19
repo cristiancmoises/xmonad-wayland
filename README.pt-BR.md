@@ -18,8 +18,7 @@ compatíveis.
 
 ![XMonad Wayland rodando no River](screenshots/river-xmonad-fastfetch.png)
 
-Captura sem edição da sessão real do notebook: um terminal rodando o fastfetch
-com o gerenciador e o compositor detectados.
+Captura sem edição do desktop River do mantenedor rodando o XMonad Wayland.
 
 ## Experimentar no Guix
 

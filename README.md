@@ -16,8 +16,8 @@ arbitrary `xmonad-contrib` modules are not compatible.
 
 ![XMonad Wayland running on River](screenshots/river-xmonad-fastfetch.png)
 
-Unmodified capture from the real laptop session: a terminal running fastfetch
-with the manager and compositor detected.
+Unmodified capture from the maintainer's River desktop running XMonad
+Wayland.
 
 ## Try it on Guix
 
