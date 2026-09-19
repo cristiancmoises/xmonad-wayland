@@ -20,6 +20,7 @@ main = xmonad $ def
                  , ((mod4Mask .|. shiftMask, xK_k), swapPrevious)
                  , ((mod4Mask .|. shiftMask, xK_c), close)
                  , ((mod4Mask, xK_space), nextLayout)
+                 , ((mod4Mask, xK_v), pickWindow)
                  , ((mod4Mask, xK_h), shrink)
                  , ((mod4Mask, xK_l), expand)
                  , ((mod4Mask, xK_1), viewWS "1")

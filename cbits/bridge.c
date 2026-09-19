@@ -32,7 +32,8 @@ struct window {
     uint32_t id;
     bool announced, closed, configured, visible, focused;
     bool parent_dirty, hints_dirty, fullscreen_dirty, fullscreen_requested, floating;
-    bool exited_fullscreen;
+    bool exited_fullscreen, meta_dirty;
+    char app_id[256], title[256];
     uint32_t parent_id, fullscreen_output;
     size_t stacking_depth;
     int32_t min_width, min_height, max_width, max_height;
@@ -412,8 +413,35 @@ static void window_dimensions_hint(void *data, struct river_window_v1 *proxy,
     w->hints_dirty = true;
 }
 
+static void window_meta(char *destination, size_t capacity, const char *text)
+{
+    /* Protocol strings are untrusted: bound the copy and keep NUL termination. */
+    size_t length = text ? strlen(text) : 0;
+    if (length >= capacity) length = capacity - 1;
+    if (length) memcpy(destination, text, length);
+    destination[length] = '\0';
+}
+
+static void window_app_id(void *data, struct river_window_v1 *proxy,
+                          const char *app_id)
+{
+    struct window *w = data;
+    (void)proxy;
+    window_meta(w->app_id, sizeof w->app_id, app_id);
+    w->meta_dirty = true;
+}
+
+static void window_title(void *data, struct river_window_v1 *proxy,
+                         const char *title)
+{
+    struct window *w = data;
+    (void)proxy;
+    window_meta(w->title, sizeof w->title, title);
+    w->meta_dirty = true;
+}
+
 static void window_text(void *data, struct river_window_v1 *proxy,
-                         const char *text)
+                        const char *text)
 {
     (void)data; (void)proxy; (void)text;
 }
@@ -497,8 +525,8 @@ static const struct river_window_v1_listener window_listener = {
     .closed = window_closed,
     .dimensions_hint = window_dimensions_hint,
     .dimensions = window_dimensions,
-    .app_id = window_text,
-    .title = window_text,
+    .app_id = window_app_id,
+    .title = window_title,
     .parent = window_parent,
     .decoration_hint = window_uint,
     .pointer_move_requested = window_pointer_move,
@@ -844,6 +872,11 @@ static void update_lifecycle(void)
         if (w->hints_dirty) {
             xw_event(12, w->id, w->min_width, w->min_height, w->max_width, w->max_height);
             w->hints_dirty = false;
+        }
+        if (w->meta_dirty) {
+            xw_window_string(26, w->id, w->app_id);
+            xw_window_string(27, w->id, w->title);
+            w->meta_dirty = false;
         }
         if (w->fullscreen_dirty) {
             xw_event(13, w->id, w->fullscreen_requested, 0, 0, 0);

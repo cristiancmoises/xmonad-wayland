@@ -32,6 +32,8 @@ void xw_request_exit_session(void);
 /* Haskell export. Events and actions are documented in the design spec. */
 void xw_event(int32_t kind, uint32_t id, int32_t a, int32_t b,
               int32_t c, int32_t d);
+/* Metadata strings: 26 = app id, 27 = title; NUL-terminated, bounded. */
+void xw_window_string(int32_t kind, uint32_t id, const char *text);
 void xw_configure_bindings(void);
 
 #endif

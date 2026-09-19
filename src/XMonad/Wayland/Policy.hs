@@ -20,10 +20,12 @@ data WindowMetadata = WindowMetadata
   , windowFloatRect :: !(Maybe Rect)
   , windowWidthWeight :: !Rational
   , windowHeightWeight :: !Rational
+  , windowAppId :: !(Maybe String)
+  , windowTitle :: !(Maybe String)
   } deriving (Eq, Show)
 
 defaultMetadata :: WindowMetadata
-defaultMetadata = WindowMetadata Nothing (0, 0, 0, 0) False False Nothing 1 1
+defaultMetadata = WindowMetadata Nothing (0, 0, 0, 0) False False Nothing 1 1 Nothing Nothing
 
 -- Geometry is captured once: River reports cumulative logical displacement.
 data PointerOperation = PointerOperation
@@ -119,6 +121,14 @@ handleOrdinaryEvent cfg ev p = case ev of
     let next = alterMetadata wid (\m -> m { windowFullscreen = enabled }) p
     in done (if enabled && not (sessionLocked p) && wid `elem` visibleWindows p
       then next { windowSet = S.focusWindow wid ws } else next)
+  WindowAppId wid text
+    | Map.member wid (windowMetadata p) ->
+        done (alterMetadata wid (\m -> m { windowAppId = Just (sanitizeMeta text) }) p)
+    | otherwise -> done p
+  WindowTitle wid text
+    | Map.member wid (windowMetadata p) ->
+        done (alterMetadata wid (\m -> m { windowTitle = Just (sanitizeMeta text) }) p)
+    | otherwise -> done p
   FocusRequested wid
     | not (sessionLocked p) && wid `elem` visibleWindows p -> change (S.focusWindow wid)
     | otherwise -> done p
@@ -166,6 +176,8 @@ handleOrdinaryEvent cfg ev p = case ev of
         Launcher -> (p, [Spawn (launcherCommand cfg)])
         Stop -> (p, [StopRuntime])
         Restart -> (p, [RestartRuntime])
+        Pick -> (p, [PickWindow (pickerCommand cfg) (windowChoices p)])
+        FocusWindow wid -> change (focusWindowBy wid)
   where
     ws = windowSet p
     done p' = (p', [])
@@ -409,6 +421,29 @@ metadataFor p wid = Map.findWithDefault defaultMetadata wid (windowMetadata p)
 
 fixedSize :: (Int, Int, Int, Int) -> Bool
 fixedSize (minW, minH, maxW, maxH) = minW > 0 && minH > 0 && minW == maxW && minH == maxH
+
+-- | Protocol strings are untrusted: bound their length and drop control
+-- characters before they reach picker labels or any command line.
+sanitizeMeta :: String -> String
+sanitizeMeta = take 255 . filter (\c -> c >= ' ' && c /= '\DEL')
+
+-- | Label every window of the current workspace with a single letter for
+-- the picker chooser, like XMonad's WindowBringer.
+windowChoices :: Policy -> [(String, WindowId)]
+windowChoices p = take 35
+  [ (letter ++ " " ++ labelFor wid, wid)
+  | (letter, wid) <- zip letters windows ]
+  where
+    windows = S.index (windowSet p)
+    letters = map (:[]) (['a'..'z'] ++ ['1'..'9'])
+    labelFor wid = maybe (maybe (show wid) id (windowAppId m)) id (windowTitle m)
+      where m = metadataFor p wid
+
+-- | Focus a window from any workspace, viewing its workspace when needed.
+focusWindowBy :: WindowId -> WindowSet -> WindowSet
+focusWindowBy wid stackSet = case S.findTag wid stackSet of
+  Just tag -> S.focusWindow wid (S.view tag stackSet)
+  Nothing -> stackSet
 
 data Navigation = ToWindow WindowId | ToWorkspace WorkspaceId
 

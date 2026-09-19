@@ -32,6 +32,7 @@ data KeyBinding = KeyBinding
 data Config = Config
   { terminalCommand :: !Command
   , launcherCommand :: !Command
+  , pickerCommand :: !Command
   , initialLayout :: !Layout
   , layoutCycle :: ![Layout]
   , initialMasterRatio :: !Rational
@@ -51,7 +52,7 @@ data Action
   | FocusDirection Direction | MoveDirection Direction | Sink | FocusModeToggle
   | SetLayout Layout | ToggleSplit | CycleSwayLayout | Resize Axis Int
   | EnterMode BindingMode | RunCommand Command | Reload | ConfirmExit Command
-  | Restart
+  | Restart | Pick | FocusWindow WindowId
   deriving (Eq, Read, Show)
 
 data Event
@@ -60,6 +61,8 @@ data Event
   | WindowParent WindowId (Maybe WindowId)
   | WindowSizeHints WindowId Int Int Int Int
   | WindowFullscreen WindowId Bool
+  | WindowAppId WindowId String
+  | WindowTitle WindowId String
   | PointerStarted SeatId WindowId Word32 Int Int
   | PointerMoved SeatId Int Int
   | PointerReleased SeatId | PointerCancelled SeatId
@@ -69,6 +72,7 @@ data Event
 
 data Effect = CloseWindow WindowId | Spawn Command | StopRuntime | ReloadConfig
   | ConfirmSessionExit Command | RestartRuntime
+  | PickWindow Command [(String, WindowId)]
   deriving (Eq, Show)
 
 data Placement = Placement
