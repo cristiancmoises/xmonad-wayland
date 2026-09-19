@@ -52,7 +52,7 @@ data Action
   | FocusDirection Direction | MoveDirection Direction | Sink | FocusModeToggle
   | SetLayout Layout | ToggleSplit | CycleSwayLayout | Resize Axis Int
   | EnterMode BindingMode | RunCommand Command | Reload | ConfirmExit Command
-  | Restart | Pick | FocusWindow WindowId
+  | Restart | Pick | SwapToWindow WindowId
   deriving (Eq, Read, Show)
 
 data Event

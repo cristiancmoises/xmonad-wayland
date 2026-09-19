@@ -246,10 +246,12 @@ main = do
            map snd options == S.index (windowSet base)
              && map fst options == ["a 30", "b 20", "c 10"]
          _ -> False
-  assert "focus by window id views the right workspace" $
-    let away = events [OutputUpsert 7 (Rect 0 0 800 600), WindowAdded 10
-                      , ActionRequested (View 2), WindowAdded 20]
-        focused = step (ActionRequested (FocusWindow 10)) away
-    in focusedWindow focused == Just 10 && S.currentTag (windowSet focused) == 1
+  assert "easy swap exchanges the picked window with the focused one" $
+    let picked = step (ActionRequested (SwapToWindow 20)) base
+    in S.index (windowSet picked) == [20, 30, 10]
+      && focusedWindow picked == Just 20
+  assert "easy swap on the focused window is a no-op" $
+    let same = step (ActionRequested (SwapToWindow 30)) base
+    in windowSet same == windowSet base
   stressPolicies
   putStrLn "All policy tests passed (including 15,000 mixed lifecycle events)."

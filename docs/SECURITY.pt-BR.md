@@ -29,7 +29,7 @@ Parar o gerenciador não é bloquear a tela. O encerramento confirmado exige
 uma resposta explícita bem-sucedida e protocolo versão 4.
 
 Aplicativos X11 usam o XWayland e seus limites de segurança. Este pacote não
-promete isolamento entre clientes X11. A versão 0.3.0 não tem certificação
+promete isolamento entre clientes X11. A versão 0.4.0 não tem certificação
 de produção nem auditoria de segurança externa.
 
 Instalar o pacote não altera a configuração existente do XMonad, `river/init`,

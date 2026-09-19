@@ -177,7 +177,7 @@ handleOrdinaryEvent cfg ev p = case ev of
         Stop -> (p, [StopRuntime])
         Restart -> (p, [RestartRuntime])
         Pick -> (p, [PickWindow (pickerCommand cfg) (windowChoices p)])
-        FocusWindow wid -> change (focusWindowBy wid)
+        SwapToWindow wid -> change (swapToWindow wid)
   where
     ws = windowSet p
     done p' = (p', [])
@@ -439,11 +439,16 @@ windowChoices p = take 35
     labelFor wid = maybe (maybe (show wid) id (windowAppId m)) id (windowTitle m)
       where m = metadataFor p wid
 
--- | Focus a window from any workspace, viewing its workspace when needed.
-focusWindowBy :: WindowId -> WindowSet -> WindowSet
-focusWindowBy wid stackSet = case S.findTag wid stackSet of
-  Just tag -> S.focusWindow wid (S.view tag stackSet)
-  Nothing -> stackSet
+-- | Swap the selected window with the focused one and focus it, mirroring
+-- XMonad's swapNth flow: the old focused window takes the selected window's
+-- former position and everything else keeps its place.
+swapToWindow :: WindowId -> WindowSet -> WindowSet
+swapToWindow wid stackSet = case S.index stackSet of
+  (focused : rest) | focused /= wid -> case elemIndex wid rest of
+    Just idx -> S.modify' (\_ -> S.Stack wid (take idx rest)
+      (focused : drop (idx + 1) rest)) stackSet
+    Nothing -> stackSet
+  _ -> stackSet
 
 data Navigation = ToWindow WindowId | ToWorkspace WorkspaceId
 

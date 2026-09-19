@@ -6,7 +6,7 @@ A Haskell window manager for **River 0.4+**, using XMonad's unmodified StackSet
 for window order, focus and workspaces. River handles graphics, input and
 Wayland/XWayland clients; this project supplies the window-management policy.
 
-**0.3.0 is a development release for GNU Guix.** Since September 2026 it
+**0.4.0 is a development release for GNU Guix.** Since September 2026 it
 runs in a real River login session on a Predator Helios laptop (NVIDIA RTX 4060
 plus Intel) through the SecurityOps channel, and in nested sessions for trying
 it out on any Wayland desktop. Daily-use acceptance — suspend/resume, monitor
