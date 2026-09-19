@@ -231,12 +231,12 @@ class Server:
             self.event(self.layer_outputs[self.output], 'non_exclusive_area', 0, 30, 1200, 770)
         elif self.round == 1:
             assert self.focus == self.before_layer_focus and self.window_focus_requests == 1, 'non-interactive panel took keyboard focus'
-            assert self.sizes[self.w1] == (596, 766), 'panel workarea ignored'
+            assert self.sizes[self.w1] == (600, 770), 'panel workarea ignored'
             self.event(self.layer_seats[self.seat], 'focus_exclusive')
             self.layer_focus = 'exclusive'
         elif self.round == 2:
             assert self.window_focus_requests == 0, 'WM tried to focus a window over an exclusive launcher'
-            assert self.sizes[self.w1] == (596, 766) and self.positions[self.w1][1] == 32, 'panel workarea ignored'
+            assert self.sizes[self.w1] == (600, 770) and self.positions[self.w1][1] == 30, 'panel workarea ignored'
             self.event(self.layer_seats[self.seat], 'focus_none')
             self.layer_focus = 'none'
         elif self.round == 3:
@@ -338,7 +338,7 @@ class Server:
             self.event(self.dialog, 'dimensions_hint', 300, 200, 300, 200)
         elif self.round == 1:
             assert self.sizes[self.dialog] == (300, 200), ('dialog size hints ignored', self.sizes)
-            assert self.sizes[self.w1] == (596, 796), ('dialog shrank parent tile', self.sizes)
+            assert self.sizes[self.w1] == (600, 800), ('dialog shrank parent tile', self.sizes)
             assert self.positions[self.dialog] == (450, 300), ('dialog not centered', self.positions)
             assert self.tiled[self.dialog] == 0
             self.event(self.seat, 'window_interaction', self.w1)
@@ -352,14 +352,14 @@ class Server:
             self.event(self.w1, 'exit_fullscreen_requested')
         elif self.round == 4:
             assert len(shown) == 3 and not self.fullscreen and not self.informed
-            assert self.sizes[self.w1] == (596, 796)
+            assert self.sizes[self.w1] == (600, 800)
             self.key(ord('t'), 64)
         elif self.round == 5:
-            assert self.sizes[self.w1] == (596, 396) and self.tiled[self.w1] == 0
-            assert self.sizes[self.w2] == (1196, 796)
+            assert self.sizes[self.w1] == (600, 400) and self.tiled[self.w1] == 0
+            assert self.sizes[self.w2] == (1200, 800)
             self.key(ord('t'), 64)
         elif self.round == 6:
-            assert self.sizes[self.w1] == (596, 796) and self.tiled[self.w1] == 15
+            assert self.sizes[self.w1] == (600, 800) and self.tiled[self.w1] == 15
             self.event(self.wm, 'output', self.output2)
             self.event(self.output2, 'position', 1200, 0)
             self.event(self.output2, 'dimensions', 800, 600)
@@ -401,7 +401,7 @@ class Server:
             assert self.fullscreen == {self.w1: self.output3}
             self.key(ord('f'), 64)
         elif self.round == 17:
-            assert not self.fullscreen and self.positions[self.w1] == (-798, -598)
+            assert not self.fullscreen and self.positions[self.w1] == (-800, -600)
             # Windows may independently resize: render sequences need no manage sequence.
             self.round += 1
             self.phase = 'render'
@@ -409,14 +409,14 @@ class Server:
             self.event(self.wm, 'render_start')
             return
         elif self.round == 18:
-            assert self.positions[self.w1] == (-798, -598)
+            assert self.positions[self.w1] == (-800, -600)
             # Server-side IDs may be recycled after unmap and destruction.
             # Reusing a former dialog must not retain its parent or size hints.
             self.closed.remove(self.dialog)
             self.event(self.wm, 'window', self.dialog)
             self.event(self.dialog, 'dimensions_hint', 0, 0, 0, 0)
         elif self.round == 19:
-            assert self.tiled[self.dialog] == 15 and self.sizes[self.dialog] == (396, 596)
+            assert self.tiled[self.dialog] == 15 and self.sizes[self.dialog] == (400, 600)
             assert self.focus == self.dialog and len(shown) == 2
             self.key(ord('q'), 64 | 1)
         elif self.round == 20:

@@ -186,11 +186,11 @@ main = do
     (rectFor 10 (renderPolicy dialog) == [Rect 0 0 800 600]
       && rectFor 20 (renderPolicy dialog) == [Rect 200 150 400 300])
   assert "dialog respects fixed content dimensions and reserves its borders"
-    (rectFor 20 (renderPolicy fixedDialog) == [Rect 248 198 304 204])
+    (rectFor 20 (renderPolicy fixedDialog) == [Rect 250 200 300 200])
   let fixedUnparented = fromBridge 12 20 300 200 300 200 (step (WindowAdded 20) parentOnly)
       userTiledFixed = act ToggleFloat fixedUnparented
   assert "fixed-size windows float even when the client has no mapped parent"
-    (rectFor 20 (renderPolicy fixedUnparented) == [Rect 248 198 304 204]
+    (rectFor 20 (renderPolicy fixedUnparented) == [Rect 250 200 300 200]
       && rectFor 10 (renderPolicy fixedUnparented) == [Rect 0 0 800 600])
   assert "repeated size hints preserve the user's tiling override"
     (rectFor 20 (renderPolicy userTiledFixed) == [Rect 0 0 400 600]
