@@ -81,7 +81,9 @@ handleEvent cfg ev original =
 
 handleOrdinaryEvent :: Config -> Event -> Policy -> (Policy, [Effect])
 handleOrdinaryEvent cfg ev p = case ev of
-  PointerStarted sid wid edges x y -> done (startPointer sid wid edges x y p)
+  PointerStarted sid wid edges x y
+    | activeMode p == PickerMode -> cancelPicker p
+    | otherwise -> done (startPointer sid wid edges x y p)
   PointerMoved sid dx dy -> done (movePointer sid dx dy p)
   PointerReleased sid -> done (endPointer sid p)
   PointerCancelled sid -> done (endPointer sid p)
@@ -132,11 +134,15 @@ handleOrdinaryEvent cfg ev p = case ev of
   FocusRequested wid
     | not (sessionLocked p) && wid `elem` visibleWindows p -> change (S.focusWindow wid)
     | otherwise -> done p
-  Locked -> done p { sessionLocked = True }
+  Locked -> (p { sessionLocked = True, activeMode = NormalMode }, [HidePicker])
   Unlocked -> done p { sessionLocked = False }
   ActionRequested action
     | sessionLocked p -> done p
     | otherwise -> case action of
+        Pick -> startPicker p
+        PickCandidate index -> finishPicker index p
+        PickCancel -> cancelPicker p
+        _ | activeMode p == PickerMode -> done p
         FocusNext -> change S.focusDown
         FocusPrevious -> change S.focusUp
         SwapMaster -> change S.swapMaster
@@ -176,7 +182,6 @@ handleOrdinaryEvent cfg ev p = case ev of
         Launcher -> (p, [Spawn (launcherCommand cfg)])
         Stop -> (p, [StopRuntime])
         Restart -> (p, [RestartRuntime])
-        Pick -> (p, [PickWindow (pickerCommand cfg) (windowChoices p)])
         SwapToWindow wid -> change (swapToWindow wid)
   where
     ws = windowSet p
@@ -427,17 +432,33 @@ fixedSize (minW, minH, maxW, maxH) = minW > 0 && minH > 0 && minW == maxW && min
 sanitizeMeta :: String -> String
 sanitizeMeta = take 255 . filter (\c -> c >= ' ' && c /= '\DEL')
 
--- | Label every window of the current workspace with a single letter for
--- the picker chooser, like XMonad's WindowBringer.
-windowChoices :: Policy -> [(String, WindowId)]
-windowChoices p = take 35
-  [ (letter ++ " " ++ labelFor wid, wid)
-  | (letter, wid) <- zip letters windows ]
+-- | Letter, screen rectangle and window id for every visible window of the
+-- current workspace, in focus order, like XMonad's EasyMotion candidates.
+pickerChoices :: Policy -> [(Char, Rect, WindowId)]
+pickerChoices p = take 35
+  [ (letter, rect, wid)
+  | (letter, wid) <- zip letters (S.index (windowSet p))
+  , Just rect <- [lookup wid placements] ]
   where
-    windows = S.index (windowSet p)
-    letters = map (:[]) (['a'..'z'] ++ ['1'..'9'])
-    labelFor wid = maybe (maybe (show wid) id (windowAppId m)) id (windowTitle m)
-      where m = metadataFor p wid
+    letters = ['a'..'z'] ++ ['1'..'9']
+    placements = [ (placementWindow pl, placementRect pl)
+                 | pl <- renderPolicy p, placementVisible pl ]
+
+-- | Show the letter overlay and arm the picker mode.
+startPicker :: Policy -> (Policy, [Effect])
+startPicker p = case pickerChoices p of
+  [] -> (p, [])
+  candidates -> (p { activeMode = PickerMode }, [ShowPicker [(c, r) | (c, r, _) <- candidates]])
+
+-- | Swap the candidate into the focused position and hide the overlay.
+finishPicker :: Int -> Policy -> (Policy, [Effect])
+finishPicker index p = case drop index (pickerChoices p) of
+  ((_, _, wid):_) -> (p { activeMode = NormalMode
+                        , windowSet = swapToWindow wid (windowSet p) }, [HidePicker])
+  [] -> cancelPicker p
+
+cancelPicker :: Policy -> (Policy, [Effect])
+cancelPicker p = (p { activeMode = NormalMode }, [HidePicker])
 
 -- | Swap the selected window with the focused one and focus it, mirroring
 -- XMonad's swapNth flow: the old focused window takes the selected window's

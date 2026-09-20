@@ -22,7 +22,7 @@ data LayoutState = LayoutState
 data Command = Command FilePath [String] deriving (Eq, Read, Show)
 data Direction = GoLeft | GoDown | GoUp | GoRight deriving (Eq, Read, Show)
 data Axis = Width | Height deriving (Eq, Read, Show)
-data BindingMode = NormalMode | ResizeMode deriving (Eq, Ord, Read, Show, Enum)
+data BindingMode = NormalMode | ResizeMode | PickerMode deriving (Eq, Ord, Read, Show, Enum)
 data KeyBinding = KeyBinding
   { bindingKeysym :: !Word32
   , bindingModifiers :: !Word32
@@ -32,7 +32,6 @@ data KeyBinding = KeyBinding
 data Config = Config
   { terminalCommand :: !Command
   , launcherCommand :: !Command
-  , pickerCommand :: !Command
   , initialLayout :: !Layout
   , layoutCycle :: ![Layout]
   , initialMasterRatio :: !Rational
@@ -52,7 +51,7 @@ data Action
   | FocusDirection Direction | MoveDirection Direction | Sink | FocusModeToggle
   | SetLayout Layout | ToggleSplit | CycleSwayLayout | Resize Axis Int
   | EnterMode BindingMode | RunCommand Command | Reload | ConfirmExit Command
-  | Restart | Pick | SwapToWindow WindowId
+  | Restart | Pick | SwapToWindow WindowId | PickCandidate Int | PickCancel
   deriving (Eq, Read, Show)
 
 data Event
@@ -72,7 +71,7 @@ data Event
 
 data Effect = CloseWindow WindowId | Spawn Command | StopRuntime | ReloadConfig
   | ConfirmSessionExit Command | RestartRuntime
-  | PickWindow Command [(String, WindowId)]
+  | ShowPicker [(Char, Rect)] | HidePicker
   deriving (Eq, Show)
 
 data Placement = Placement

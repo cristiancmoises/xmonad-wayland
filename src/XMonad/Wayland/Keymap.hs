@@ -3,7 +3,7 @@
 module XMonad.Wayland.Keymap
   ( key, modeKey, keySym, super, shift, control, alt
   , keyReturn, keyEscape, keyTab, keyLeft, keyDown, keyUp, keyRight, keyPrint
-  , defaultKeyBindings, validateKeyBindings, validateConfig, bindingAt
+  , defaultKeyBindings, validateKeyBindings, validateConfig, bindingAt, pickerBindings
   ) where
 
 import Data.Bits ((.&.))
@@ -73,9 +73,6 @@ validateKeyBindings = go Set.empty
       | otherwise = go (Set.insert chord seen) rest
       where chord = (bindingMode binding, bindingKeysym binding, bindingModifiers binding)
 
-commandExecutable :: Command -> String
-commandExecutable (Command executable _) = executable
-
 validateConfig :: Config -> Either String ()
 validateConfig cfg
   | null tags || any (<= 0) tags || nub tags /= tags =
@@ -86,8 +83,6 @@ validateConfig cfg
       Left "initialMasterRatio must lie between zero and one"
   | resizeIncrement cfg < 0 = Left "resizeIncrement must not be negative"
   | cursorSize cfg == 0 = Left "cursorSize must be positive"
-  | commandExecutable (pickerCommand cfg) == "" =
-      Left "pickerCommand must name an executable"
   | otherwise = do
       validateKeyBindings (keyBindings cfg)
       mapM_ validAction (map bindingAction (keyBindings cfg))
@@ -101,10 +96,18 @@ validateConfig cfg
       | tag `elem` tags = Right ()
       | otherwise = Left ("binding refers to unknown workspace " ++ show tag)
 
+-- Letters the picker listens for while PickerMode is active. They are
+-- registered after the user's bindings and are inert in every other mode.
+pickerBindings :: [KeyBinding]
+pickerBindings = map letterBinding (zip [0..] (['a'..'z'] ++ ['1'..'9']))
+  ++ [KeyBinding keyEscape 0 PickerMode PickCancel]
+  where
+    letterBinding (index, symbol) = KeyBinding (keySym symbol) 0 PickerMode (PickCandidate index)
+
 -- Check the mode again at dispatch, since earlier input in the same compositor
 -- transaction may have switched modes after this key press was queued.
 bindingAt :: [KeyBinding] -> BindingMode -> Word32 -> Maybe Action
-bindingAt bindings mode index = at index bindings
+bindingAt bindings mode index = at index (bindings ++ pickerBindings)
   where
     at _ [] = Nothing
     at 0 (binding:_)

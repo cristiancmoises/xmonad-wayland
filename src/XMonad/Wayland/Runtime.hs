@@ -11,6 +11,8 @@ import Data.Int (Int32)
 import Data.Word (Word32)
 import Foreign.C.Types (CInt(..))
 import Foreign.C.String (CString, peekCString, withCString)
+import Foreign.C.Types (CChar(..))
+import Data.Char (ord)
 import System.Exit (ExitCode(..), exitWith)
 import System.IO (hClose, hGetContents, hPutStr, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -19,9 +21,9 @@ import System.Environment (getArgs, lookupEnv)
 import System.Posix.Files (readSymbolicLink)
 import System.Posix.Process (executeFile)
 import System.Posix.Signals (sigKILL, sigTERM, signalProcessGroup)
-import System.Process (CreateProcess(..), ProcessHandle, StdStream(..), createProcess, getPid, getProcessExitCode, proc, readProcessWithExitCode, waitForProcess)
+import System.Process (CreateProcess(..), ProcessHandle, StdStream(..), createProcess, getPid, getProcessExitCode, proc, waitForProcess)
 import Text.Read (readEither)
-import XMonad.Wayland.Keymap (bindingAt, validateConfig)
+import XMonad.Wayland.Keymap (bindingAt, pickerBindings, validateConfig)
 import XMonad.Wayland.Policy
 import XMonad.Wayland.Protocol (decodeEvent)
 import XMonad.Wayland.Types
@@ -46,6 +48,9 @@ foreign import ccall unsafe "xw_set_render_position" c_setRenderPosition
 -- Reset invokes xw_configure_bindings and therefore must be a safe call.
 foreign import ccall safe "xw_reset_bindings" c_resetBindings :: IO ()
 foreign import ccall unsafe "xw_set_cursor_theme" c_setCursorTheme :: CString -> Word32 -> IO ()
+foreign import ccall unsafe "xw_picker_show" c_picker_show :: Word32 -> IO ()
+foreign import ccall unsafe "xw_picker_label" c_picker_label :: Word32 -> CInt -> CInt -> CInt -> CInt -> CChar -> IO ()
+foreign import ccall unsafe "xw_picker_hide" c_picker_hide :: IO ()
 -- This call only writes an atomic flag. The Wayland thread sends the request.
 foreign import ccall unsafe "xw_request_exit_session" c_requestExitSession :: IO ()
 foreign export ccall xw_event :: Int32 -> Word32 -> Int32 -> Int32 -> Int32 -> Int32 -> IO ()
@@ -135,7 +140,7 @@ xw_configure_bindings = configure `catch` containFailure
           let cfg = runtimeConfig rt
           forM_ (cursorTheme cfg) $ \theme ->
             withCString theme (\name -> c_setCursorTheme name (cursorSize cfg))
-          forM_ (zip [0..] (keyBindings (runtimeConfig rt))) $ \(index, binding) ->
+          forM_ (zip [0..] (keyBindings (runtimeConfig rt) ++ pickerBindings)) $ \(index, binding) ->
             c_addBinding (bindingKeysym binding) (bindingModifiers binding) index
               (fromIntegral (fromEnum (bindingMode binding)))
         _ -> pure ()
@@ -219,34 +224,15 @@ execute RestartRuntime = restart `catch` restartFailure
       executeFile target True (target : arguments) Nothing
     restartFailure :: IOException -> IO ()
     restartFailure e = report ("restart failed: " ++ displayException e)
-execute (PickWindow (Command executable arguments) options) = pick `catch` pickFailure
+execute (ShowPicker candidates) = do
+  c_picker_show (fromIntegral (length candidates))
+  forM_ (zip [0 :: Word32 ..] candidates) $ \(index, (letter, Rect x y w h)) ->
+    c_picker_label (fromIntegral index) (bounded x) (bounded y) (bounded w) (bounded h)
+      (fromIntegral (ord letter))
   where
-    pick = do
-      (_, output, _) <- readProcessWithExitCode executable arguments
-        (unlines (map fst options))
-      case words output of
-        (chosen:_) ->
-          case [ wid | (line, wid) <- options
-                     , firstCharacter line /= Nothing
-                     , firstCharacter line == firstCharacter chosen ] of
-            [wid] -> focus wid
-            _ -> pure ()
-        _ -> pure ()
-    firstCharacter value = case value of
-      (c:_) -> Just c
-      [] -> Nothing
-    focus wid = do
-      state <- readIORef runtimeRef
-      case state of
-        Just rt | callbackFailure rt == Nothing -> do
-          let (p, effects) = handleEvent (runtimeConfig rt)
-                (ActionRequested (SwapToWindow wid)) (runtimePolicy rt)
-          writeIORef runtimeRef (Just rt { runtimePolicy = p })
-          applyPolicy rt { runtimePolicy = p }
-          mapM_ execute effects
-        _ -> pure ()
-    pickFailure :: IOException -> IO ()
-    pickFailure e = report ("window picker failed: " ++ displayException e)
+    bounded value = fromIntegral (max (fromIntegral (minBound :: CInt))
+      (min (fromIntegral (maxBound :: CInt)) value))
+execute HidePicker = c_picker_hide
 execute (ConfirmSessionExit (Command executable arguments)) = mask_ $ do
   state <- readIORef runtimeRef
   case state of

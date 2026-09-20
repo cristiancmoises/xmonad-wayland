@@ -82,10 +82,11 @@ reiniciar, como o XMonad faz. Consulte a [documentação de configuração](docs
 para a superfície suportada e os limites honestos: sem `xmonad-contrib`, sem
 hooks de X11 e sem `manageHook` nesta versão.
 
-O mod+v rotula cada janela da área de trabalho atual com uma letra e foca a
-escolhida, como o WindowBringer do XMonad (o overlay com letras grandes sobre
-as próprias janelas está planejado; hoje um seletor estilo dmenu lista as
-mesmas letras com o título ou o app id de cada janela).
+O mod+v desenha uma letra grande sobre cada janela da área de trabalho
+atual, em fundo preto (estilo EasyMotion, sem abrir janela nenhuma), e a letra
+escolhida troca essa janela de lugar com a focada. Escape ou um clique
+cancela o seletor. Títulos e app ids continuam disponíveis na política para
+futuros overlays de rótulo.
 
 Usuários avançados podem continuar compilando um ponto de entrada Haskell
 próprio com comandos, modos de teclado, áreas de trabalho, cursor e layouts

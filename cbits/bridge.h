@@ -29,6 +29,13 @@ void xw_set_cursor_theme(const char *name, uint32_t size);
 /* Thread-safe: only sets an atomic flag for the Wayland event thread. */
 void xw_request_exit_session(void);
 
+/* Picker overlay: letters drawn by the manager; missing shm/compositor
+ * globals (fake compositors) disable the visual part only. */
+void xw_picker_show(uint32_t count);
+void xw_picker_label(uint32_t index, int32_t x, int32_t y,
+                     int32_t width, int32_t height, uint8_t letter);
+void xw_picker_hide(void);
+
 /* Haskell export. Events and actions are documented in the design spec. */
 void xw_event(int32_t kind, uint32_t id, int32_t a, int32_t b,
               int32_t c, int32_t d);

@@ -6,6 +6,9 @@
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
 
 #include "bridge.h"
 #include "river-window-management-v1-client-protocol.h"
@@ -13,6 +16,7 @@
 #include "river-layer-shell-v1-client-protocol.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -20,9 +24,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <wayland-client.h>
+#include <wayland-client-protocol.h>
+#include <linux/memfd.h>
+#include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
 enum phase { PHASE_IDLE, PHASE_MANAGE, PHASE_RENDER };
+
+/* Picker overlay API, defined later; the teardown paths use it early. */
+static bool picker_active;
+void xw_picker_hide(void);
 enum layer_focus { LAYER_FOCUS_NONE, LAYER_FOCUS_EXCLUSIVE, LAYER_FOCUS_NON_EXCLUSIVE };
 
 struct window {
@@ -94,12 +108,16 @@ static struct {
     struct river_window_manager_v1 *manager;
     struct river_xkb_bindings_v1 *xkb;
     struct river_layer_shell_v1 *layer_shell;
+    struct wl_compositor *compositor;
+    struct wl_shm *shm;
+    struct zwlr_layer_shell_v1 *wlr_layer_shell;
     struct window *windows;
     struct output *outputs;
     struct seat *seats, *primary;
     struct input *input_head, *input_tail;
     enum phase phase;
     uint32_t next_id, manager_global, xkb_global, layer_global, binding_mode;
+    uint32_t picker_output_id;
     uint32_t pointer_seat, pointer_window, pointer_edges;
     bool pointer_cancel_batch;
     bool running, failed, finished, unavailable, exit_sent;
@@ -131,6 +149,8 @@ static void fail(const char *message)
     if (!state.failed)
         fprintf(stderr, "xmonad-wayland: %s\n", message);
     state.failed = true;
+    if (picker_active)
+        xw_picker_hide();
     state.running = false;
 }
 
@@ -1067,6 +1087,8 @@ static void manager_finished(void *data, struct river_window_manager_v1 *proxy)
 {
     (void)data; (void)proxy;
     state.finished = true;
+    if (picker_active)
+        xw_picker_hide();
     state.running = false;
 }
 
@@ -1155,6 +1177,304 @@ static const struct river_window_manager_v1_listener manager_listener = {
     .seat = manager_seat,
 };
 
+/* -- Picker overlay: EasyMotion-style letters drawn by the manager itself.
+ * One overlay surface on the focused output; a public-domain 8x8 bitmap font
+ * scaled up per window, black background, no input grab.  Missing globals
+ * (fake compositors, smoke tests) simply disable the visual overlay. */
+struct picker_label {
+    int32_t x, y, width, height;
+    uint8_t letter;
+};
+struct picker_overlay {
+    struct output *output;
+    struct wl_surface *surface;
+    struct zwlr_layer_surface_v1 *layer_surface;
+    struct wl_buffer *buffer;
+    struct wl_shm_pool *pool;
+    uint32_t *pixels;
+    uint32_t width, height, stride;
+    int fd;
+    bool configured;
+};
+
+static struct picker_label picker_labels[35];
+static uint32_t picker_count;
+static bool picker_active;
+static struct picker_overlay picker;
+
+/* 8x8 bitmap glyphs for a-z and 1-9 (classic public-domain patterns). */
+static const uint8_t picker_font[35][8] = {
+    {0x00,0x00,0x18,0x24,0x42,0x7e,0x42,0x42}, /* a */
+    {0x00,0x00,0x7c,0x42,0x7c,0x42,0x42,0x7c}, /* b */
+    {0x00,0x00,0x3c,0x42,0x40,0x40,0x42,0x3c}, /* c */
+    {0x00,0x00,0x78,0x44,0x42,0x42,0x44,0x78}, /* d */
+    {0x00,0x00,0x7e,0x40,0x7c,0x40,0x40,0x7e}, /* e */
+    {0x00,0x00,0x7e,0x40,0x7c,0x40,0x40,0x40}, /* f */
+    {0x00,0x00,0x3c,0x42,0x40,0x4e,0x42,0x3c}, /* g */
+    {0x00,0x00,0x42,0x42,0x7e,0x42,0x42,0x42}, /* h */
+    {0x00,0x00,0x7e,0x18,0x18,0x18,0x18,0x7e}, /* i */
+    {0x00,0x00,0x0e,0x04,0x04,0x44,0x44,0x38}, /* j */
+    {0x00,0x00,0x42,0x44,0x78,0x44,0x42,0x42}, /* k */
+    {0x00,0x00,0x40,0x40,0x40,0x40,0x40,0x7e}, /* l */
+    {0x00,0x00,0x42,0x66,0x5a,0x42,0x42,0x42}, /* m */
+    {0x00,0x00,0x42,0x62,0x52,0x4a,0x46,0x42}, /* n */
+    {0x00,0x00,0x3c,0x42,0x42,0x42,0x42,0x3c}, /* o */
+    {0x00,0x00,0x7c,0x42,0x42,0x7c,0x40,0x40}, /* p */
+    {0x00,0x00,0x3c,0x42,0x42,0x4a,0x44,0x3a}, /* q */
+    {0x00,0x00,0x7c,0x42,0x42,0x7c,0x44,0x42}, /* r */
+    {0x00,0x00,0x3c,0x40,0x3c,0x02,0x42,0x3c}, /* s */
+    {0x00,0x00,0x7e,0x18,0x18,0x18,0x18,0x18}, /* t */
+    {0x00,0x00,0x42,0x42,0x42,0x42,0x42,0x3c}, /* u */
+    {0x00,0x00,0x42,0x42,0x42,0x42,0x24,0x18}, /* v */
+    {0x00,0x00,0x42,0x42,0x42,0x5a,0x66,0x42}, /* w */
+    {0x00,0x00,0x42,0x24,0x18,0x18,0x24,0x42}, /* x */
+    {0x00,0x00,0x42,0x24,0x18,0x18,0x18,0x18}, /* y */
+    {0x00,0x00,0x7e,0x02,0x1c,0x20,0x40,0x7e}, /* z */
+    {0x00,0x00,0x18,0x28,0x08,0x08,0x08,0x3e}, /* 1 */
+    {0x00,0x00,0x3c,0x42,0x02,0x3c,0x40,0x7e}, /* 2 */
+    {0x00,0x00,0x7c,0x02,0x3c,0x02,0x02,0x7c}, /* 3 */
+    {0x00,0x00,0x44,0x44,0x44,0x7e,0x04,0x04}, /* 4 */
+    {0x00,0x00,0x7e,0x40,0x7c,0x02,0x42,0x3c}, /* 5 */
+    {0x00,0x00,0x3c,0x40,0x7c,0x42,0x42,0x3c}, /* 6 */
+    {0x00,0x00,0x7e,0x02,0x04,0x08,0x10,0x10}, /* 7 */
+    {0x00,0x00,0x3c,0x42,0x3c,0x42,0x42,0x3c}, /* 8 */
+    {0x00,0x00,0x3c,0x42,0x42,0x3e,0x02,0x3c}, /* 9 */
+};
+
+static const uint8_t *picker_glyph(uint8_t letter)
+{
+    if (letter >= 'a' && letter <= 'z')
+        return picker_font[letter - 'a'];
+    if (letter >= '1' && letter <= '9')
+        return picker_font[26 + (letter - '1')];
+    return NULL;
+}
+
+static int picker_shm_fd(size_t size, void **mapping)
+{
+    int fd = (int)syscall(SYS_memfd_create, "xmonad-wayland-picker", MFD_CLOEXEC);
+    if (fd < 0)
+        return -1;
+    if (ftruncate(fd, (off_t)size) < 0) {
+        close(fd);
+        return -1;
+    }
+    *mapping = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (*mapping == MAP_FAILED) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+static void picker_release_buffer(struct picker_overlay *overlay)
+{
+    if (overlay->buffer) {
+        wl_buffer_destroy(overlay->buffer);
+        overlay->buffer = NULL;
+    }
+    if (overlay->pool) {
+        wl_shm_pool_destroy(overlay->pool);
+        overlay->pool = NULL;
+    }
+    if (overlay->pixels) {
+        munmap(overlay->pixels, (size_t)overlay->stride * overlay->height);
+        overlay->pixels = NULL;
+    }
+    if (overlay->fd >= 0) {
+        close(overlay->fd);
+        overlay->fd = -1;
+    }
+}
+
+static void picker_draw_label(struct picker_overlay *overlay,
+                              const struct picker_label *label)
+{
+    const uint8_t *glyph = picker_glyph(label->letter);
+    int32_t origin_x = overlay->output ? overlay->output->x : 0;
+    int32_t origin_y = overlay->output ? overlay->output->y : 0;
+    int32_t left = label->x - origin_x;
+    int32_t top = label->y - origin_y;
+    int32_t scale, glyph_width, glyph_height, offset_x, offset_y, row, column, px, py;
+    uint32_t *pixel;
+    if (!glyph || label->width <= 0 || label->height <= 0)
+        return;
+    scale = (label->width < label->height ? label->width : label->height) / 8;
+    if (scale < 1)
+        scale = 1;
+    glyph_width = 8 * scale;
+    glyph_height = 8 * scale;
+    offset_x = left + (label->width - glyph_width) / 2;
+    offset_y = top + (label->height - glyph_height) / 2;
+    for (row = 0; row < label->height; row++) {
+        for (column = 0; column < label->width; column++) {
+            int32_t cx = left + column, cy = top + row;
+            if (cx < 0 || cy < 0 || (uint32_t)cx >= overlay->width
+                || (uint32_t)cy >= overlay->height)
+                continue;
+            pixel = overlay->pixels + (uint32_t)cy * (overlay->stride / 4) + (uint32_t)cx;
+            *pixel = 0xc0000000u; /* black background */
+        }
+    }
+    for (row = 0; row < 8; row++) {
+        for (column = 0; column < 8; column++) {
+            if (!(glyph[row] & (0x80u >> column)))
+                continue;
+            for (py = 0; py < scale; py++) {
+                for (px = 0; px < scale; px++) {
+                    int32_t cx = offset_x + column * scale + px;
+                    int32_t cy = offset_y + row * scale + py;
+                    if (cx < 0 || cy < 0 || (uint32_t)cx >= overlay->width
+                        || (uint32_t)cy >= overlay->height)
+                        continue;
+                    pixel = overlay->pixels + (uint32_t)cy * (overlay->stride / 4) + (uint32_t)cx;
+                    *pixel = 0xffffffffu; /* white letter */
+                }
+            }
+        }
+    }
+}
+
+static void picker_redraw(struct picker_overlay *overlay)
+{
+    uint32_t stride, index;
+    if (!overlay->configured || overlay->width == 0 || overlay->height == 0)
+        return;
+    stride = overlay->width * 4;
+    if (!overlay->buffer || overlay->stride != stride) {
+        size_t size = (size_t)stride * overlay->height;
+        void *mapping = NULL;
+        picker_release_buffer(overlay);
+        overlay->fd = picker_shm_fd(size, &mapping);
+        if (overlay->fd < 0)
+            return;
+        overlay->pool = wl_shm_create_pool(state.shm, overlay->fd, (int32_t)size);
+        overlay->buffer = wl_shm_pool_create_buffer(overlay->pool, 0,
+            (int32_t)overlay->width, (int32_t)overlay->height,
+            (int32_t)stride, WL_SHM_FORMAT_ARGB8888);
+        overlay->pixels = mapping;
+        overlay->stride = stride;
+        if (!overlay->pool || !overlay->buffer) {
+            picker_release_buffer(overlay);
+            return;
+        }
+    }
+    memset(overlay->pixels, 0, (size_t)stride * overlay->height);
+    for (index = 0; index < picker_count; index++)
+        picker_draw_label(overlay, &picker_labels[index]);
+    wl_surface_attach(overlay->surface, overlay->buffer, 0, 0);
+    wl_surface_damage_buffer(overlay->surface, 0, 0,
+                             (int32_t)overlay->width, (int32_t)overlay->height);
+    wl_surface_commit(overlay->surface);
+}
+
+static void picker_layer_configure(void *data, struct zwlr_layer_surface_v1 *layer_surface,
+                                   uint32_t serial, uint32_t width, uint32_t height)
+{
+    struct picker_overlay *overlay = data;
+    zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+    overlay->width = width;
+    overlay->height = height;
+    overlay->configured = true;
+    picker_redraw(overlay);
+}
+
+static void picker_layer_closed(void *data, struct zwlr_layer_surface_v1 *layer_surface)
+{
+    struct picker_overlay *overlay = data;
+    (void)layer_surface;
+    overlay->layer_surface = NULL;
+}
+
+static const struct zwlr_layer_surface_v1_listener picker_layer_listener = {
+    .configure = picker_layer_configure,
+    .closed = picker_layer_closed,
+};
+
+static void shm_format(void *data, struct wl_shm *shm, uint32_t format)
+{
+    (void)data; (void)shm; (void)format;
+}
+
+static const struct wl_shm_listener shm_listener = { .format = shm_format };
+
+static struct output *picker_output(void)
+{
+    struct output *output, *fallback = NULL;
+    for (output = state.outputs; output; output = output->next) {
+        if (output->removed || !output->announced || !output->has_dimensions)
+            continue;
+        if (!fallback)
+            fallback = output;
+        if (output->id == state.picker_output_id)
+            return output;
+    }
+    return fallback;
+}
+
+void xw_picker_show(uint32_t count)
+{
+    struct output *output;
+    if (count > 35 || picker_active || !state.compositor || !state.shm
+        || !state.wlr_layer_shell || state.failed)
+        return;
+    output = picker_output();
+    if (!output)
+        return;
+    picker.surface = wl_compositor_create_surface(state.compositor);
+    if (!picker.surface)
+        return;
+    picker.layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+        state.wlr_layer_shell, picker.surface, NULL,
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "xmonad-wayland-picker");
+    if (!picker.layer_surface) {
+        wl_surface_destroy(picker.surface);
+        picker.surface = NULL;
+        return;
+    }
+    zwlr_layer_surface_v1_add_listener(picker.layer_surface, &picker_layer_listener, &picker);
+    zwlr_layer_surface_v1_set_anchor(picker.layer_surface,
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
+    zwlr_layer_surface_v1_set_exclusive_zone(picker.layer_surface, -1);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(picker.layer_surface,
+        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+    zwlr_layer_surface_v1_set_size(picker.layer_surface,
+        (uint32_t)output->width, (uint32_t)output->height);
+    picker.output = output;
+    picker.fd = -1;
+    picker_count = count;
+    picker_active = true;
+    wl_surface_commit(picker.surface);
+}
+
+void xw_picker_label(uint32_t index, int32_t x, int32_t y,
+                     int32_t width, int32_t height, uint8_t letter)
+{
+    if (index >= picker_count || index >= 35)
+        return;
+    picker_labels[index].x = x;
+    picker_labels[index].y = y;
+    picker_labels[index].width = width;
+    picker_labels[index].height = height;
+    picker_labels[index].letter = letter;
+}
+
+void xw_picker_hide(void)
+{
+    picker_release_buffer(&picker);
+    if (picker.layer_surface)
+        zwlr_layer_surface_v1_destroy(picker.layer_surface);
+    if (picker.surface)
+        wl_surface_destroy(picker.surface);
+    picker.layer_surface = NULL;
+    picker.surface = NULL;
+    picker.output = NULL;
+    picker.configured = false;
+    picker.width = picker.height = picker.stride = 0;
+    picker_count = 0;
+    picker_active = false;
+}
+
 static void registry_global(void *data, struct wl_registry *registry,
                              uint32_t name, const char *interface, uint32_t version)
 {
@@ -1190,6 +1510,16 @@ static void registry_global(void *data, struct wl_registry *registry,
             attach_layer_output(output);
         for (seat = state.seats; seat; seat = seat->next)
             attach_layer_seat(seat);
+    } else if (!strcmp(interface, wl_compositor_interface.name) && !state.compositor) {
+        /* Optional: only the picker overlay needs these globals. */
+        state.compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+    } else if (!strcmp(interface, wl_shm_interface.name) && !state.shm) {
+        state.shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+        if (state.shm)
+            wl_shm_add_listener(state.shm, &shm_listener, NULL);
+    } else if (!strcmp(interface, zwlr_layer_shell_v1_interface.name) && !state.wlr_layer_shell) {
+        state.wlr_layer_shell = wl_registry_bind(registry, name,
+                                                 &zwlr_layer_shell_v1_interface, 4);
     }
 }
 
@@ -1252,6 +1582,7 @@ void xw_set_output(uint32_t id)
     struct output *output;
     if (!require_manage())
         return;
+    state.picker_output_id = id;
     for (output = state.outputs; output; output = output->next)
         if (output->id == id && output->layer && !output->removed) {
             river_layer_shell_output_v1_set_default(output->layer);
@@ -1436,7 +1767,9 @@ static void dispatch_once(void)
         if (wl_display_dispatch_pending(state.display) < 0) {
             if (!interrupted && !state.exit_sent)
                 fail("Wayland connection lost while dispatching pending events");
-            state.running = false;
+            if (picker_active)
+        xw_picker_hide();
+    state.running = false;
             return;
         }
     }
@@ -1498,7 +1831,9 @@ int xw_run(void)
     state.display = wl_display_connect(NULL);
     if (!state.display) {
         fprintf(stderr, "xmonad-wayland: cannot connect to Wayland display: %s; start this program as River's window manager\n", strerror(errno));
-        state.running = false;
+        if (picker_active)
+        xw_picker_hide();
+    state.running = false;
         return 1;
     }
     state.registry = wl_display_get_registry(state.display);

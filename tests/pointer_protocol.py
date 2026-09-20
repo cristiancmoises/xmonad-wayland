@@ -120,7 +120,7 @@ class PointerServer(Server):
             self.manage()
 
     def exercise(self):
-        assert len(self.bindings) == 34, 'pointer support changed keyboard bindings'
+        assert len(self.bindings) == 70, 'pointer support changed keyboard bindings (34 user + 36 picker)'
         assert len(self.pointer_bindings) == len(self.pointer_enabled) == 2, 'Super move/resize bindings missing'
         self.event(self.seat, 'window_interaction', self.w1)
         self.key(ord('t'), 64)

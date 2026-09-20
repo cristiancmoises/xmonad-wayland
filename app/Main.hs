@@ -15,7 +15,7 @@ main = do
   arguments <- getArgs
   case arguments of
     [] -> runCompiledOrDefault
-    ["--version"] -> putStrLn "xmonad-wayland 0.4.0 (XMonad StackSet policy for River Wayland)"
+    ["--version"] -> putStrLn "xmonad-wayland 0.4.1 (XMonad StackSet policy for River Wayland)"
     ["--recompile"] -> recompile
     ["--help"] -> putStrLn $ unlines
       [ "Usage: xmonad-wayland [--version | --recompile | --help]"

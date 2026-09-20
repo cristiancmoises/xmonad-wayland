@@ -30,7 +30,7 @@ void xw_request_exit_session(void)
 
 void xw_add_binding(uint32_t keysym, uint32_t modifiers, uint32_t index, uint32_t mode)
 {
-    assert(phase == 1 && mode <= 1);
+    assert(phase == 1 && mode <= 2);
     assert(keysym != 0 && modifiers < 256);
     if (keysym == 0xff0d && modifiers == 64) command_binding = index;
     if (keysym == 'r' && modifiers == 64) reload_binding = index;
@@ -40,12 +40,26 @@ void xw_add_binding(uint32_t keysym, uint32_t modifiers, uint32_t index, uint32_
 
 void xw_set_binding_mode(uint32_t mode)
 {
-    assert(phase == 1 && mode <= 1);
+    assert(phase == 1 && mode <= 2);
 }
 
 void xw_set_pointer_operation(uint32_t seat, uint32_t window, uint32_t edges)
 {
     assert(phase == 1 && seat == 0 && window == 0 && edges == 0);
+}
+
+void xw_picker_show(uint32_t count)
+{
+    (void)count;
+}
+
+void xw_picker_label(uint32_t index, int x, int y, int width, int height, uint8_t letter)
+{
+    (void)index; (void)x; (void)y; (void)width; (void)height; (void)letter;
+}
+
+void xw_picker_hide(void)
+{
 }
 
 void xw_set_render_position(uint32_t id, int x, int y)

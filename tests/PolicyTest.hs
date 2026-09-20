@@ -239,13 +239,31 @@ main = do
     let long = replicate 300 'x'
         meta = Map.lookup 10 (windowMetadata (events [WindowAdded 10, WindowTitle 10 (long ++ "\0\n\x7f")]))
     in fmap windowTitle meta == Just (Just (take 255 (filter (/= '\n') (filter (/= '\x7f') (filter (/= '\0') long)))))
-  assert "pick action labels current-workspace windows with letters" $
+  assert "pick shows a letter overlay for every visible window" $
     let (p, effects) = handleEvent defaultConfig (ActionRequested Pick) base
     in case effects of
-         [PickWindow (Command "fuzzel" ["-d"]) options] ->
-           map snd options == S.index (windowSet base)
-             && map fst options == ["a 30", "b 20", "c 10"]
+         [ShowPicker options] ->
+           activeMode p == PickerMode
+             && map fst options == "abc"
+             && sort (map (show . snd) options) == sort [ show (placementRect pl)
+                | pl <- renderPolicy base, placementVisible pl ]
          _ -> False
+  assert "picked letter swaps and hides the overlay" $
+    let (p, _) = handleEvent defaultConfig (ActionRequested Pick) base
+        (p2, effects2) = handleEvent defaultConfig (ActionRequested (PickCandidate 1)) p
+    in effects2 == [HidePicker]
+      && activeMode p2 == NormalMode
+      && S.index (windowSet p2) == [20, 30, 10]
+      && focusedWindow p2 == Just 20
+  assert "escape cancels the picker without changing the stack" $
+    let (p, _) = handleEvent defaultConfig (ActionRequested Pick) base
+        (p2, effects) = handleEvent defaultConfig (ActionRequested PickCancel) p
+    in effects == [HidePicker] && activeMode p2 == NormalMode
+      && windowSet p2 == windowSet base
+  assert "locking the session hides the picker" $
+    let (p, _) = handleEvent defaultConfig (ActionRequested Pick) base
+        (p2, effects) = handleEvent defaultConfig Locked p
+    in effects == [HidePicker] && sessionLocked p2 && activeMode p2 == NormalMode
   assert "easy swap exchanges the picked window with the focused one" $
     let picked = step (ActionRequested (SwapToWindow 20)) base
     in S.index (windowSet picked) == [20, 30, 10]
