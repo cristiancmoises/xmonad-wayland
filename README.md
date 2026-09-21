@@ -71,6 +71,20 @@ Stopping the manager is neither logout nor screen lock. River and applications
 remain running. Run `xmonad-wayland` in a terminal inside that River session to
 resume management.
 
+## Downloading and unpacking
+
+Release archives are compressed with zupt at its maximum level:
+
+```
+zupt extract xmonad-wayland-0.4.2.tar.zupt   # restores xmonad-wayland-0.4.2.tar
+sha256sum -c xmonad-wayland-0.4.2.sha256     # verify the archive
+tar -xf xmonad-wayland-0.4.2.tar             # unpack the source tree
+```
+
+`zupt` is the post-quantum backup compressor from the SecurityOps channel
+(`zupt compress -l 9`); `zupt list` and `zupt test` inspect and verify an
+archive without extracting it.
+
 ## Configuration and current limits
 
 X11 users migrating to Wayland keep their config idiom: write

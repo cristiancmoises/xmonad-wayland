@@ -72,6 +72,20 @@ Parar o gerenciador não encerra nem bloqueia a sessão. O River e os aplicativo
 continuam em execução. Para retomar o gerenciamento, execute `xmonad-wayland`
 em um terminal dentro daquela sessão do River.
 
+## Baixando e descompactando
+
+Os arquivos de release usam compressão zupt no nível máximo:
+
+```
+zupt extract xmonad-wayland-0.4.2.tar.zupt   # restaura xmonad-wayland-0.4.2.tar
+sha256sum -c xmonad-wayland-0.4.2.sha256     # verifique o arquivo
+tar -xf xmonad-wayland-0.4.2.tar             # descompacte a árvore de código
+```
+
+O `zupt` é o compressor de backup pós-quântico do canal SecurityOps
+(`zupt compress -l 9`); `zupt list` e `zupt test` inspecionam e verificam um
+arquivo sem extraí-lo.
+
 ## Configuração e limites atuais
 
 Quem migra do X11 mantém o idioma da configuração: escreva
