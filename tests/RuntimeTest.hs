@@ -1,11 +1,13 @@
 module Main (main) where
 
+import Control.Exception (SomeException, try)
 import Data.Maybe (fromMaybe)
+import System.FilePath (takeDirectory)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (die)
 import XMonad.Wayland.Config (defaultConfig)
 import XMonad.Wayland.Keymap (key, keyReturn, keySym, super)
-import XMonad.Wayland.Runtime (run, runWithReload)
+import XMonad.Wayland.Runtime (readConfig, run, runWithReload)
 import XMonad.Wayland.Types
 
 -- The C fixture calls into the real Runtime through its exported ABI. The
@@ -36,4 +38,15 @@ main = do
       runWithReload cfg (pure next)
     ["fail"] -> run defaultConfig
       { terminalCommand = Command (error "intentional callback test failure") [] }
+    ["config-check", resultPath] -> do
+      let directory = takeDirectory resultPath
+          garbagePath = directory ++ "/garbage.conf"
+          validPath = directory ++ "/valid.conf"
+      writeFile garbagePath "not a config {{{\n"
+      writeFile validPath (show defaultConfig)
+      garbage <- try (readConfig garbagePath) :: IO (Either SomeException Config)
+      valid <- readConfig validPath
+      case (garbage, valid == defaultConfig) of
+        (Left _, True) -> pure ()
+        _ -> die "readConfig hardening regression"
     _ -> die "Usage: runtime-test normal RESULT INJECTED | runtime-test fail"

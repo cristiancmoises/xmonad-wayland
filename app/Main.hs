@@ -15,13 +15,15 @@ main = do
   arguments <- getArgs
   case arguments of
     [] -> runCompiledOrDefault
-    ["--version"] -> putStrLn "xmonad-wayland 0.4.2 (XMonad StackSet policy for River Wayland)"
+    ["--version"] -> putStrLn "xmonad-wayland 0.5.0 (XMonad StackSet policy for River Wayland)"
     ["--recompile"] -> recompile
     ["--help"] -> putStrLn $ unlines
       [ "Usage: xmonad-wayland [--version | --recompile | --help]"
       , "Run inside River >= 0.4. River classic/0.3 is incompatible."
       , "Configuration: compile ~/.xmonad/xmonad.hs with --recompile;"
       , "the manager executes the result automatically on start and restart."
+      , "Window picker: mod+v labels windows with letters (a-z, 1-9); press a"
+      , "letter to swap it with the focused window. Escape or a click cancels."
       , "Advanced: compile a custom Main using XMonad.Wayland.Config and Runtime."
       ]
     _ -> die "Usage: xmonad-wayland [--version | --recompile | --help]"
@@ -63,6 +65,7 @@ recompile = do
     , "-outputdir", directory ++ "/xmonad-wayland-build"
     , "-o", output ] ++ bridgeObjects ++ bridgeLibs
   putStrLn ("configuration compiled: " ++ output)
+  putStrLn "Restart the manager to run it: mod+Shift+q (session exit) or the restart action."
 
 findCompiler :: IO FilePath
 findCompiler = do

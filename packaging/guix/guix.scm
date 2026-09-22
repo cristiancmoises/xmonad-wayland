@@ -59,10 +59,10 @@
 
 (package
   (name "xmonad-wayland")
-  (version "0.4.2")
+  (version "0.5.0")
   (source
    (local-file %source-directory
-               "xmonad-wayland-0.4.2-source"
+               "xmonad-wayland-0.5.0-source"
                #:recursive? #t
                #:select? public-source?))
   (build-system gnu-build-system)

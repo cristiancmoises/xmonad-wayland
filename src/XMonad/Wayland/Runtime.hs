@@ -155,9 +155,11 @@ xw_window_string kind ident text = dispatch `catch` containFailure
       case state of
         Just rt | callbackFailure rt == Nothing -> do
           bytes <- peekCString text
-          let event = if kind == 26 then WindowAppId ident bytes
-                      else WindowTitle ident bytes
-              (p, effects) = handleEvent (runtimeConfig rt) event (runtimePolicy rt)
+          event <- case kind of
+            26 -> pure (WindowAppId ident bytes)
+            27 -> pure (WindowTitle ident bytes)
+            _ -> fail "xw_window_string: unexpected metadata kind"
+          let (p, effects) = handleEvent (runtimeConfig rt) event (runtimePolicy rt)
           writeIORef runtimeRef (Just rt
             { runtimePolicy = p, pendingEffects = reverse effects ++ pendingEffects rt })
         _ -> pure ()

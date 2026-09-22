@@ -1,5 +1,7 @@
 -- | Sample xmonad.hs for X11 users migrating to Wayland.  Compile it with
 -- @xmonad-wayland --recompile@; the manager runs the result automatically.
+-- mod+v shows the letter picker: press a letter to swap that window with the
+-- focused one; Escape or a click cancels.
 module Main (main) where
 
 import Data.Bits ((.|.))

@@ -63,6 +63,11 @@ with tempfile.TemporaryDirectory(prefix="xmonad-runtime-") as directory:
         else:
             raise AssertionError(f'{mode}: confirmation process survived runtime cleanup')
     result = subprocess.run(
+        [binary, "config-check", str(result_path)],
+        env=environment, capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result
+    result = subprocess.run(
         [binary, "fail"], env=dict(environment, XW_RUNTIME_FAIL="1"),
         capture_output=True, text=True, timeout=15,
     )

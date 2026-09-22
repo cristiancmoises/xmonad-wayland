@@ -438,11 +438,11 @@ pickerChoices :: Policy -> [(Char, Rect, WindowId)]
 pickerChoices p = take 35
   [ (letter, rect, wid)
   | (letter, wid) <- zip letters (S.index (windowSet p))
-  , Just rect <- [lookup wid placements] ]
+  , Just rect <- [Map.lookup wid placements] ]
   where
     letters = ['a'..'z'] ++ ['1'..'9']
-    placements = [ (placementWindow pl, placementRect pl)
-                 | pl <- renderPolicy p, placementVisible pl ]
+    placements = Map.fromList [ (placementWindow pl, placementRect pl)
+                              | pl <- renderPolicy p, placementVisible pl ]
 
 -- | Show the letter overlay and arm the picker mode.
 startPicker :: Policy -> (Policy, [Effect])
